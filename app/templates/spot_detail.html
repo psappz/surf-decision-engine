@@ -1,48 +1,59 @@
 {% extends "base.html" %}
+{% macro prefs_form() -%}
+<form method="get" action="/preferences" class="preference-form">
+  <input type="hidden" name="next" value="{{ request.url.path }}">
+  <label>{{ t('proficiency') }}<select name="proficiency" onchange="this.form.submit()">{% for p in proficiencies %}<option value="{{ p }}" {% if p==proficiency %}selected{% endif %}>{{ prof_label(p) }}</option>{% endfor %}</select></label>
+  <label>{{ t('language') }}<select name="lang" onchange="this.form.submit()">{% for code,label in languages.items() %}<option value="{{ code }}" {% if code==lang %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></label>
+  <button>{{ t('save_preferences') }}</button>
+</form>
+{%- endmacro %}
 {% block body %}
 <header class="top surf-hero compact">
   <div class="brand-lockup">
     <img class="site-logo" src="/static/wavewatch-logo.svg" alt="WaveWatch logo">
-    <div><h1>WaveWatch</h1><p class="tagline">{{ user.username }} · {{ user.role }} · spot check</p></div>
+    <div><h1>WaveWatch</h1><p class="tagline">{{ user.username }} · {{ user.role }} · {{ t('spot_check') }}</p></div>
   </div>
-  <nav><a class="button-link" href="/surf">Back to lineup</a></nav>
-  <form method="post" action="/logout"><input type="hidden" name="csrf_token" value="{{ csrf }}"><button>Logout</button></form>
+  <div class="header-actions">
+    {{ prefs_form() }}
+    <nav><a class="button-link" href="/surf">{{ t('back_to_lineup') }}</a></nav>
+    <form method="post" action="/logout"><input type="hidden" name="csrf_token" value="{{ csrf }}"><button>{{ t('logout') }}</button></form>
+  </div>
 </header>
 <main>
   <article class="spot-hero shell-card">
-    <p class="eyebrow">Peak notes</p>
+    <p class="eyebrow">{{ t('peak_notes') }}</p>
     <h2>{{ spot.name }}</h2>
     <p class="tagline">{{ spot.spot_type }} · {{ spot.difficulty }} · stay stoked, avoid the close-out.</p>
     <dl class="grid">
-      <dt>Zone or section</dt><dd>{{ spot.zone_name }}</dd>
-      <dt>Beach name</dt><dd>{{ spot.beach_name }}</dd>
-      <dt>Latitude</dt><dd>{{ spot.latitude }}</dd>
-      <dt>Longitude</dt><dd>{{ spot.longitude }}</dd>
-      <dt>Map</dt><dd><a href="{{ spot.maps_url|safe }}" rel="noopener noreferrer" target="_blank">Google Maps coordinates</a></dd>
-      <dt>Description</dt><dd>{{ spot.description }}</dd>
-      <dt>Multiple zones / peaks</dt><dd>{{ spot.zone_name }}; parameters are provisional and editable in seed data.</dd>
-      <dt>Spot type</dt><dd>{{ spot.spot_type }}</dd>
-      <dt>Suitable surfer level</dt><dd>{{ spot.difficulty }}</dd>
-      <dt>Preferred swell directions</dt><dd>{{ spot.preferred_swell_direction_min }}°–{{ spot.preferred_swell_direction_max }}°</dd>
-      <dt>Preferred swell period range</dt><dd>{{ spot.preferred_period_min }}–{{ spot.preferred_period_max }} s</dd>
-      <dt>Preferred wind directions</dt><dd>{{ spot.preferred_wind_direction_min }}°–{{ spot.preferred_wind_direction_max }}°</dd>
-      <dt>Relevant tide range</dt><dd>{{ spot.preferred_tide_min }}–{{ spot.preferred_tide_max }} · {{ spot.tide_preference }}</dd>
-      <dt>Known hazards</dt><dd>{{ spot.hazards }}</dd>
-      <dt>Access notes</dt><dd>{{ spot.access_notes }}</dd>
-      <dt>Sources used</dt><dd>Open-Meteo-compatible marine/weather fixture, astronomical tide estimate; IPMA/Copernicus/buoy/webcam adapters are displayed when disabled/degraded.</dd>
-      <dt>Last update time</dt><dd>{% if latest %}{{ latest.fetched_at }}{% else %}No forecast{% endif %}</dd>
+      <dt>{{ t('zone_section') }}</dt><dd>{{ spot.zone_name }}</dd>
+      <dt>{{ t('beach_name') }}</dt><dd>{{ spot.beach_name }}</dd>
+      <dt>{{ t('latitude') }}</dt><dd>{{ spot.latitude }}</dd>
+      <dt>{{ t('longitude') }}</dt><dd>{{ spot.longitude }}</dd>
+      <dt>{{ t('map') }}</dt><dd><a href="{{ spot.maps_url|safe }}" rel="noopener noreferrer" target="_blank">{{ t('maps_coordinates') }}</a></dd>
+      <dt>{{ t('description') }}</dt><dd>{{ spot.description }}</dd>
+      <dt>{{ t('multiple_zones') }}</dt><dd>{{ spot.zone_name }}; parameters are provisional and editable in seed data.</dd>
+      <dt>{{ t('type') }}</dt><dd>{{ spot.spot_type }}</dd>
+      <dt>{{ t('suitable_level') }}</dt><dd>{{ spot.difficulty }}</dd>
+      <dt>{{ t('preferred_swell_dirs') }}</dt><dd>{{ spot.preferred_swell_direction_min }}°–{{ spot.preferred_swell_direction_max }}°</dd>
+      <dt>{{ t('preferred_period') }}</dt><dd>{{ spot.preferred_period_min }}–{{ spot.preferred_period_max }} s</dd>
+      <dt>{{ t('preferred_wind_dirs') }}</dt><dd>{{ spot.preferred_wind_direction_min }}°–{{ spot.preferred_wind_direction_max }}°</dd>
+      <dt>{{ t('relevant_tide') }}</dt><dd>{{ spot.preferred_tide_min }}–{{ spot.preferred_tide_max }} · {{ spot.tide_preference }}</dd>
+      <dt>{{ t('hazards') }}</dt><dd>{{ spot.hazards }}</dd>
+      <dt>{{ t('access_notes') }}</dt><dd>{{ spot.access_notes }}</dd>
+      <dt>{{ t('sources_used') }}</dt><dd>Open-Meteo-compatible marine/weather fixture, astronomical tide estimate; IPMA/Copernicus/buoy/webcam adapters are displayed when disabled/degraded.</dd>
+      <dt>{{ t('last_update') }}</dt><dd>{% if latest %}{{ latest.fetched_at }}{% else %}No forecast{% endif %}</dd>
     </dl>
   </article>
-  <section><p class="eyebrow">Session scores</p><h2>Current forecast summary</h2><div class="cards">
+  <section><p class="eyebrow">{{ t('session_scores') }}</p><h2>{{ t('current_forecast') }}</h2><div class="cards">
     {% for part in ['morning','midday','evening'] %}{% set sc=scores.get(part) %}
-    <article class="card"><h3>{{ part|capitalize }} set</h3>{% if sc %}<p class="score-line">{{ sc.classification }} · {{ sc.score }}/100 · {{ sc.confidence_label }}</p><p>Estimated breaking-wave range {{ sc.summary.estimated_breaking_range[0] }}–{{ sc.summary.estimated_breaking_range[1] }} m</p><p>{{ sc.explanation }}</p>{% else %}<p>No score for this daypart.</p>{% endif %}</article>
+    <article class="card"><h3>{{ t(part) }} set</h3>{% if sc %}<p class="score-line">{{ surf_call(sc.score, sc.confidence_label) }} · {{ classification_label(sc.classification) }} · {{ sc.score }}/100 · {{ sc.confidence_label }}</p><p>{{ t('estimated_breaking') }} {{ sc.summary.estimated_breaking_range[0] }}–{{ sc.summary.estimated_breaking_range[1] }} m</p><p>{{ sc.explanation }}</p>{% else %}<p>{{ t('no_score') }}</p>{% endif %}</article>
     {% endfor %}
   </div></section>
-  <section class="provider-panel"><p class="eyebrow">Provider lineup</p><h2>Provider Status</h2><div class="provider-grid">
+  <section class="provider-panel"><p class="eyebrow">{{ t('provider_lineup') }}</p><h2>{{ t('provider_status') }}</h2><div class="provider-grid">
     {% for k,info in provider_status.items() %}
       <button class="provider-chip status-{{ info.status }}" data-provider-button title="{{ info.reason }} {{ info.rate_limit }}" data-provider-name="{{ k }}" data-provider-status="{{ info.status }}" data-provider-reason="{{ info.reason }}" data-provider-fetched="{{ info.last_fetch }}" data-provider-rate="{{ info.rate_limit }}" data-provider-data="{{ info.human_data|join('||') }}"><span class="provider-name">{{ k }}</span><span class="status-pill {{ info.status }}">{{ info.status }}</span></button>
     {% endfor %}
   </div></section>
 </main>
-<div class="modal" data-provider-modal aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="provider-modal-title"><div class="modal-card"><button class="modal-close" aria-label="Close provider details">×</button><h2 id="provider-modal-title" data-modal-title>Provider</h2><p><span data-modal-status class="status-pill"></span></p><h3>Why this status?</h3><p data-modal-reason></p><h3>Last data bundle</h3><p data-modal-fetched></p><h3>Rate limit</h3><p data-modal-rate></p><h3>Human-readable data fetched</h3><ul data-modal-data></ul></div></div>
+<div class="modal" data-provider-modal aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="provider-modal-title"><div class="modal-card"><button class="modal-close" aria-label="{{ t('close') }}">×</button><h2 id="provider-modal-title" data-modal-title>Provider</h2><p><span data-modal-status class="status-pill"></span></p><h3>{{ t('why_status') }}</h3><p data-modal-reason></p><h3>{{ t('last_bundle') }}</h3><p data-modal-fetched></p><h3>{{ t('rate_limit') }}</h3><p data-modal-rate></p><h3>{{ t('human_data') }}</h3><ul data-modal-data></ul></div></div>
 {% endblock %}

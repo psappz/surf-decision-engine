@@ -48,6 +48,9 @@ Confidence is independent of quality and depends on provider count/agreement, ag
 ## Inspect provider status
 Use `/health` or the Provider Status section in `/surf` and spot detail pages. Each provider is protected by a 30-minute data-gathering bundle limit: the limit applies to the complete provider refresh bundle, not to each individual HTTP request inside that bundle. Hover over a provider chip to see why it is healthy/degraded/disabled/unavailable; click it to open a dismissible modal with human-readable fetched values.
 
+## Language and proficiency preferences
+WaveWatch supports English, German, and Portuguese UI labels. Authenticated pages expose a top-right language selector and a proficiency selector with `beginner`, `rookie`, `intermediate`, `advanced`, and `pro`. The proficiency selection changes recommendation scoring, alternatives, spot-detail scores, and the surf-call column in the surf-spot table. Preferences are stored in local SameSite=Lax cookies.
+
 ## Run tests
 ```bash
 pytest -q

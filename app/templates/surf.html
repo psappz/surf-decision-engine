@@ -1,85 +1,103 @@
 {% extends "base.html" %}
+{% macro prefs_form() -%}
+<form method="get" action="/preferences" class="preference-form">
+  <input type="hidden" name="next" value="{{ request.url.path }}">
+  <label>{{ t('proficiency') }}<select name="proficiency" onchange="this.form.submit()">{% for p in proficiencies %}<option value="{{ p }}" {% if p==proficiency %}selected{% endif %}>{{ prof_label(p) }}</option>{% endfor %}</select></label>
+  <label>{{ t('language') }}<select name="lang" onchange="this.form.submit()">{% for code,label in languages.items() %}<option value="{{ code }}" {% if code==lang %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></label>
+  <button>{{ t('save_preferences') }}</button>
+</form>
+{%- endmacro %}
 {% block body %}
 <header class="top surf-hero">
   <div class="brand-lockup">
     <img class="site-logo" src="/static/wavewatch-logo.svg" alt="WaveWatch logo">
     <div>
       <h1>WaveWatch</h1>
-      <p class="tagline">Aloha {{ user.username }} · {{ user.role }} · {{ date }} · Europe/Lisbon</p>
+      <p class="tagline">Aloha {{ user.username }} · {{ user.role }} · {{ date }} · {{ t('date_tz') }}</p>
     </div>
   </div>
-  <form method="post" action="/logout"><input type="hidden" name="csrf_token" value="{{ csrf }}"><button>Hang loose logout</button></form>
+  <div class="header-actions">
+    {{ prefs_form() }}
+    <form method="post" action="/logout"><input type="hidden" name="csrf_token" value="{{ csrf }}"><button>{{ t('logout') }}</button></form>
+  </div>
 </header>
 <main>
   <section class="intro-panel">
-    <p class="eyebrow">Daily lineup call</p>
-    <h2>Best surf spot of the day</h2>
-    <p>Advanced-surfer scoring for the morning take-off, midday set, and evening glass-off. Confidence is about data quality — not stoke.</p>
+    <p class="eyebrow">{{ t('daily_lineup_call') }}</p>
+    <h2>{{ t('best_spot') }}</h2>
+    <p>{{ t('best_intro') }}</p>
   </section>
   <section class="recommendation-section">
     <div class="cards rec-grid">
       {% for part in ['morning','midday','evening'] %}{% set r=recommendations.get(part) %}
       <article class="card rec-card">
-        <div class="card-kicker">{{ part|capitalize }} session</div>
+        <div class="card-kicker">{{ t(part) }} {{ t('session') }}</div>
         {% if r %}
         <h3><a href="/surf/spots/{{ r.spot.slug }}">{{ r.spot.name }}</a></h3>
         <p class="muted">{{ r.spot.zone_name }}</p>
         <div class="score-wave"><span>{{ r.score }}</span><small>/100</small></div>
         <dl class="metrics">
-          <dt>Surf call</dt><dd>{{ r.classification }} · {{ r.confidence_label }}</dd>
-          <dt>Estimated breaking-wave range</dt><dd>{{ r.summary.estimated_breaking_range[0] }}–{{ r.summary.estimated_breaking_range[1] }} m</dd>
-          <dt>Swell</dt><dd>{{ r.summary.marine.swell_wave_height or r.summary.marine.wave_height }} m · {{ r.summary.marine.swell_wave_direction or r.summary.marine.wave_direction }}° · {{ r.summary.marine.swell_wave_period or r.summary.marine.wave_period }} s</dd>
-          <dt>Wind</dt><dd>{{ r.summary.weather.wind_speed_10m }} km/h · {{ r.summary.weather.wind_direction_10m }}°</dd>
-          <dt>Tide</dt><dd>{{ r.summary.tide.state }} · level {{ r.summary.tide.water_level }}</dd>
-          <dt>Water temperature</dt><dd>{{ r.summary.marine.sea_surface_temperature }} °C</dd>
-          <dt>Newest source data</dt><dd>{{ newest_data }}</dd>
+          <dt>{{ t('surf_call') }}</dt><dd>{{ surf_call(r.score, r.confidence_label) }} · {{ classification_label(r.classification) }} · {{ r.confidence_label }}</dd>
+          <dt>{{ t('estimated_breaking') }}</dt><dd>{{ r.summary.estimated_breaking_range[0] }}–{{ r.summary.estimated_breaking_range[1] }} m</dd>
+          <dt>{{ t('swell') }}</dt><dd>{{ r.summary.marine.swell_wave_height or r.summary.marine.wave_height }} m · {{ r.summary.marine.swell_wave_direction or r.summary.marine.wave_direction }}° · {{ r.summary.marine.swell_wave_period or r.summary.marine.wave_period }} s</dd>
+          <dt>{{ t('wind') }}</dt><dd>{{ r.summary.weather.wind_speed_10m }} km/h · {{ r.summary.weather.wind_direction_10m }}°</dd>
+          <dt>{{ t('tide') }}</dt><dd>{{ r.summary.tide.state }} · level {{ r.summary.tide.water_level }}</dd>
+          <dt>{{ t('water_temp') }}</dt><dd>{{ r.summary.marine.sea_surface_temperature }} °C</dd>
+          <dt>{{ t('newest_data') }}</dt><dd>{{ newest_data }}</dd>
         </dl>
         <p class="explain">{{ r.explanation }}</p>
-        <a class="button-link" href="/surf/spots/{{ r.spot.slug }}">Inspect this peak</a>
-        {% else %}<p>No recommendation available.</p>{% endif %}
+        <a class="button-link" href="/surf/spots/{{ r.spot.slug }}">{{ t('inspect_peak') }}</a>
+        {% else %}<p>{{ t('no_recommendation') }}</p>{% endif %}
+      </article>
+      {% endfor %}
+    </div>
+  </section>
+  <section class="alternatives-panel">
+    <p class="eyebrow">{{ t('alternatives_title') }}</p>
+    <h2>{{ t('alternatives_title') }}</h2>
+    <p>{{ t('alternatives_intro') }}</p>
+    <div class="cards alt-grid">
+      {% for part in ['morning','midday','evening'] %}
+      <article class="card"><h3>{{ t(part) }}</h3>
+      {% for alt in alternatives.get(part, []) %}
+        <div class="alt-row"><strong>{{ t('second_best') if loop.index==1 else t('third_best') }}:</strong> <a href="/surf/spots/{{ alt.spot.slug }}">{{ alt.spot.name }}</a> · {{ surf_call(alt.score, alt.confidence_label) }} · {{ alt.score }}/100 · {{ alt.confidence_label }}</div>
+      {% else %}<p>{{ t('no_alternative') }}</p>{% endfor %}
       </article>
       {% endfor %}
     </div>
   </section>
   <section class="provider-panel">
-    <p class="eyebrow">Data provider lineup</p>
-    <h2>Provider Status</h2>
-    <p>Each provider is protected by a 30-minute data-gathering bundle limit. Hover for the health reason; click for the human-readable data payload.</p>
+    <p class="eyebrow">{{ t('provider_lineup') }}</p>
+    <h2>{{ t('provider_status') }}</h2>
+    <p>{{ t('provider_intro') }}</p>
     <div class="provider-grid">
       {% for k,info in provider_status.items() %}
-      <button class="provider-chip status-{{ info.status }}" data-provider-button
-        title="{{ info.reason }} {{ info.rate_limit }}"
-        data-provider-name="{{ k }}"
-        data-provider-status="{{ info.status }}"
-        data-provider-reason="{{ info.reason }}"
-        data-provider-fetched="{{ info.last_fetch }}"
-        data-provider-rate="{{ info.rate_limit }}"
-        data-provider-data="{{ info.human_data|join('||') }}">
+      <button class="provider-chip status-{{ info.status }}" data-provider-button title="{{ info.reason }} {{ info.rate_limit }}" data-provider-name="{{ k }}" data-provider-status="{{ info.status }}" data-provider-reason="{{ info.reason }}" data-provider-fetched="{{ info.last_fetch }}" data-provider-rate="{{ info.rate_limit }}" data-provider-data="{{ info.human_data|join('||') }}">
         <span class="provider-name">{{ k }}</span><span class="status-pill {{ info.status }}">{{ info.status }}</span>
       </button>
       {% endfor %}
     </div>
   </section>
   <section>
-    <p class="eyebrow">Spot catalog</p>
-    <h2>Surf spots</h2>
-    <p>All known Aljezur-area breaks in the prototype: beach breaks, river mouths, reef/rock setups, and observation-only advanced spots.</p>
-    <div class="tablewrap"><table><thead><tr><th>Name</th><th>Zone</th><th>Type</th><th>Difficulty</th><th>Current lineup summary</th><th>Confidence</th><th></th></tr></thead><tbody>
+    <p class="eyebrow">{{ t('spot_catalog') }}</p>
+    <h2>{{ t('surf_spots') }}</h2>
+    <p>{{ t('spots_intro') }}</p>
+    <div class="tablewrap"><table><thead><tr><th>{{ t('name') }}</th><th>{{ t('zone') }}</th><th>{{ t('type') }}</th><th>{{ t('difficulty') }}</th><th>{{ t('surf_call') }}</th><th>{{ t('current_summary') }}</th><th>{{ t('confidence') }}</th><th></th></tr></thead><tbody>
     {% for s in spots %}{% set ss=spot_summaries.get(s.id) %}
-      <tr><td>{{ s.name }}</td><td>{{ s.zone_name }}</td><td>{{ s.spot_type }}</td><td>{{ s.difficulty }}</td><td>{% if ss %}{{ ss.classification }} · {{ ss.score }}/100 · watch the set before drop-in{% else %}Observation-only / not scored — inspect before paddling out{% endif %}</td><td>{% if ss %}{{ ss.confidence_label }}{% else %}Uncertain{% endif %}</td><td><a href="/surf/spots/{{ s.slug }}">Detail</a></td></tr>
+      <tr><td>{{ s.name }}</td><td>{{ s.zone_name }}</td><td>{{ s.spot_type }}</td><td>{{ s.difficulty }}</td><td>{% if ss %}{{ surf_call(ss.score, ss.confidence_label) }}{% else %}{{ surf_call(0, 'Uncertain') }}{% endif %}</td><td>{% if ss %}{{ classification_label(ss.classification) }} · {{ ss.score }}/100 · {{ t('watch_set') }}{% else %}{{ t('observation_only') }}{% endif %}</td><td>{% if ss %}{{ ss.confidence_label }}{% else %}Uncertain{% endif %}</td><td><a href="/surf/spots/{{ s.slug }}">{{ t('detail') }}</a></td></tr>
     {% endfor %}
     </tbody></table></div>
   </section>
 </main>
 <div class="modal" data-provider-modal aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="provider-modal-title">
   <div class="modal-card">
-    <button class="modal-close" aria-label="Close provider details">×</button>
+    <button class="modal-close" aria-label="{{ t('close') }}">×</button>
     <h2 id="provider-modal-title" data-modal-title>Provider</h2>
     <p><span data-modal-status class="status-pill"></span></p>
-    <h3>Why this status?</h3><p data-modal-reason></p>
-    <h3>Last data bundle</h3><p data-modal-fetched></p>
-    <h3>Rate limit</h3><p data-modal-rate></p>
-    <h3>Human-readable data fetched</h3><ul data-modal-data></ul>
+    <h3>{{ t('why_status') }}</h3><p data-modal-reason></p>
+    <h3>{{ t('last_bundle') }}</h3><p data-modal-fetched></p>
+    <h3>{{ t('rate_limit') }}</h3><p data-modal-rate></p>
+    <h3>{{ t('human_data') }}</h3><ul data-modal-data></ul>
   </div>
 </div>
 {% endblock %}

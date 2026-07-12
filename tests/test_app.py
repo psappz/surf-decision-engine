@@ -100,3 +100,27 @@ def test_no_permanent_hardcoded_recommendation(client):
     assert recs and len(set(recs)) >= 1
     assert not all(x=='odeceixe' for x in recs)
     db.close()
+
+
+def test_i18n_language_and_proficiency_controls(client):
+    r=login(client,'Patrick','loliking'); client.cookies.set('ww_session', r.cookies['ww_session'])
+    client.get('/preferences?lang=de&proficiency=beginner&next=/surf', follow_redirects=False)
+    page=client.get('/surf')
+    assert 'Surfspot des Tages' in page.text
+    assert 'Schwierigkeitspräferenz' in page.text
+    assert 'Anfänger' in page.text
+    assert 'Zweit- und drittbeste Alternativen' in page.text
+    assert '<th>Surf Call</th>' in page.text
+    client.get('/preferences?lang=pt&proficiency=pro&next=/surf', follow_redirects=False)
+    pt=client.get('/surf')
+    assert 'Melhor surf spot do dia' in pt.text
+    assert 'Preferência de dificuldade' in pt.text
+
+
+def test_proficiency_changes_recommendation_scores(client):
+    r=login(client,'Patrick','loliking'); client.cookies.set('ww_session', r.cookies['ww_session'])
+    beginner=client.get('/surf?proficiency=beginner').text
+    pro=client.get('/surf?proficiency=pro').text
+    assert beginner != pro
+    assert 'Beginner' in beginner
+    assert 'Pro' in pro

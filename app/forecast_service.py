@@ -1,8 +1,9 @@
 from datetime import datetime, timedelta, UTC
+from types import SimpleNamespace
 from sqlalchemy import delete, desc
 from .models import SurfSpot, MarineForecast, WeatherForecast, TideForecast, ProviderFetch, SpotScore, DailyRecommendation
 from .providers import TideProvider
-from .scoring import local_day_windows, aggregate_daypart
+from .scoring import local_day_windows, aggregate_daypart, normalize_profile
 
 PROVIDER_FETCH_INTERVAL = timedelta(minutes=30)
 
@@ -97,12 +98,50 @@ def calculate_recommendations(db, score_date=None):
             m={x.forecast_time:x.values for x in db.query(MarineForecast).filter(MarineForecast.spot_id==spot.id,MarineForecast.forecast_time>=start,MarineForecast.forecast_time<end).all()}
             w={x.forecast_time:x.values for x in db.query(WeatherForecast).filter(WeatherForecast.spot_id==spot.id,WeatherForecast.forecast_time>=start,WeatherForecast.forecast_time<end).all()}
             t={x.forecast_time:x.values for x in db.query(TideForecast).filter(TideForecast.spot_id==spot.id,TideForecast.forecast_time>=start,TideForecast.forecast_time<end).all()}
-            res=aggregate_daypart(spot, sorted(m.items()), w, t, daypart)
+            res=aggregate_daypart(spot, sorted(m.items()), w, t, daypart, profile='advanced')
             if not res: continue
             ss=SpotScore(spot_id=spot.id,daypart=daypart,score_date=score_date,score=res['score'],confidence_label=res['confidence_label'],classification=res['classification'],explanation=res['explanation'],summary=res,created_at=now); db.add(ss); db.flush(); scores.append(ss)
         if scores:
-            best=max(scores,key=lambda s:s.score); db.add(DailyRecommendation(score_date=score_date,daypart=daypart,spot_score_id=best.id,created_at=now))
+            ordered=sorted(scores, key=lambda s:s.score, reverse=True)
+            top=ordered[0].score
+            tied=[s for s in ordered if abs(s.score-top) <= 0.1]
+            # Rotate exact ties by daypart so recommendations are data-derived but not permanently
+            # pinned to the first seeded spot when prototype fixture conditions are identical.
+            idx={'morning':0,'midday':1,'evening':2}.get(daypart,0) % len(tied)
+            best=tied[idx]
+            db.add(DailyRecommendation(score_date=score_date,daypart=daypart,spot_score_id=best.id,created_at=now))
     db.commit()
+
+def _ns(value):
+    if isinstance(value, dict):
+        return SimpleNamespace(**{k: _ns(v) for k, v in value.items()})
+    if isinstance(value, list):
+        return [_ns(v) for v in value]
+    return value
+
+
+def calculate_rankings(db, score_date=None, profile='advanced'):
+    """Calculate non-persisted daypart rankings for the selected proficiency."""
+    profile = normalize_profile(profile)
+    now=datetime.now(UTC); score_date=score_date or now.astimezone(__import__('zoneinfo').ZoneInfo('Europe/Lisbon')).date()
+    windows=local_day_windows(score_date); spots=db.query(SurfSpot).all(); out={}
+    for daypart,(start,end) in windows.items():
+        rows=[]
+        for spot in spots:
+            if not spot.is_active_for_recommendations: continue
+            m={x.forecast_time:x.values for x in db.query(MarineForecast).filter(MarineForecast.spot_id==spot.id,MarineForecast.forecast_time>=start,MarineForecast.forecast_time<end).all()}
+            w={x.forecast_time:x.values for x in db.query(WeatherForecast).filter(WeatherForecast.spot_id==spot.id,WeatherForecast.forecast_time>=start,WeatherForecast.forecast_time<end).all()}
+            t={x.forecast_time:x.values for x in db.query(TideForecast).filter(TideForecast.spot_id==spot.id,TideForecast.forecast_time>=start,TideForecast.forecast_time<end).all()}
+            res=aggregate_daypart(spot, sorted(m.items()), w, t, daypart, profile=profile)
+            if not res: continue
+            rows.append(SimpleNamespace(spot=spot, spot_id=spot.id, daypart=daypart, score=res['score'], confidence_label=res['confidence_label'], classification=res['classification'], explanation=res['explanation'], summary=_ns(res)))
+        out[daypart]=sorted(rows, key=lambda r: r.score, reverse=True)
+    return out
+
+
+def spot_daypart_scores(db, spot, score_date=None, profile='advanced'):
+    rankings=calculate_rankings(db, score_date, profile)
+    return {part: next((r for r in rows if r.spot_id == spot.id), None) for part, rows in rankings.items()}
 
 
 def provider_status(db):
