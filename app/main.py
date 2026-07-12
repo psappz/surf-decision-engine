@@ -49,6 +49,18 @@ def save_uploads(files: list[UploadFile] | None, prefix: str) -> list[str]:
     return saved
 
 
+def client_ip(request: Request) -> str:
+    forwarded_for = request.headers.get('x-forwarded-for')
+    if forwarded_for:
+        first = forwarded_for.split(',', 1)[0].strip()
+        if first:
+            return first
+    real_ip = request.headers.get('x-real-ip')
+    if real_ip and real_ip.strip():
+        return real_ip.strip()
+    return request.client.host if request.client else 'local'
+
+
 def default_language_for_user(user):
     if user and user.username_lower in {'loliking','david'}:
         return 'de'
@@ -117,13 +129,14 @@ def login_form(request:Request, user=Depends(current_user)):
     return templates.TemplateResponse('login.html', {'request':request,'csrf':'anonymous','error':None,'page_title':'Login', **prefs(request)})
 @app.post('/login')
 def login(request:Request, username:str=Form(...), password:str=Form(...), db:OrmSession=Depends(get_db)):
-    key=(request.client.host if request.client else 'local')+':'+username.lower()
+    ip=client_ip(request)
+    key=ip+':'+username.lower()
     if rate_limited(key): return templates.TemplateResponse('login.html', {'request':request,'csrf':'anonymous','error':translate(prefs(request)['lang'],'invalid_credentials'),'page_title':'Login', **prefs(request)}, status_code=429)
     user=db.query(User).filter(User.username_lower==username.lower()).first()
     if not user or not verify_password(password,user.password_hash):
         record_failure(key); return templates.TemplateResponse('login.html', {'request':request,'csrf':'anonymous','error':translate(prefs(request)['lang'],'invalid_credentials'),'page_title':'Login', **prefs(request)}, status_code=401)
     old=request.cookies.get('ww_session'); destroy_session(db, old); s=create_session(db,user,old); clear_failures(key)
-    db.add(LoginEvent(user_id=user.id, logged_in_at=datetime.now(UTC), ip_address=request.client.host if request.client else None, user_agent=request.headers.get('user-agent'))); db.commit()
+    db.add(LoginEvent(user_id=user.id, logged_in_at=datetime.now(UTC), ip_address=ip, user_agent=request.headers.get('user-agent'))); db.commit()
     resp=RedirectResponse('/surf',status_code=303); set_session_cookie(resp,s.id); return resp
 @app.get('/logout')
 def logout_link(request:Request, db:OrmSession=Depends(get_db)):

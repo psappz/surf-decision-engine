@@ -35,6 +35,16 @@ def test_success_failed_login_and_case_insensitive(client):
     assert ok.status_code==303 and ok.headers['location']=='/surf'
     assert 'ww_session' in ok.headers.get('set-cookie','')
 
+
+def test_login_records_forwarded_client_ip(client):
+    from app.database import SessionLocal
+    from app.models import LoginEvent
+    ok=client.post('/login', data={'username':'Patrick','password':'loliking'}, headers={'X-Forwarded-For':'203.0.113.44, 172.18.0.4', 'X-Real-IP':'198.51.100.10'}, follow_redirects=False)
+    assert ok.status_code==303
+    with SessionLocal() as db:
+        event=db.query(LoginEvent).order_by(LoginEvent.id.desc()).first()
+        assert event.ip_address=='203.0.113.44'
+
 def test_session_protection_redirect_logout_role_persistence(client):
     assert client.get('/surf', follow_redirects=False).status_code==303
     r=login(client,'Loliking','loliwave'); client.cookies.set('ww_session', r.cookies['ww_session'])
