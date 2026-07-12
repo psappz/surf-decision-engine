@@ -46,7 +46,7 @@ See `docs/recommendation-model.md`. The score is rule-based, inspectable, and 0â
 Confidence is independent of quality and depends on provider count/agreement, age, completeness, spot complexity, base confidence, and observation availability. Initial labels are Well supported, Estimated, and Uncertain. Live confirmed is reserved for future direct observations.
 
 ## Inspect provider status
-Use `/health` or the Provider status section in `/surf` and spot detail pages.
+Use `/health` or the Provider Status section in `/surf` and spot detail pages. Each provider is protected by a 30-minute data-gathering bundle limit: the limit applies to the complete provider refresh bundle, not to each individual HTTP request inside that bundle. Hover over a provider chip to see why it is healthy/degraded/disabled/unavailable; click it to open a dismissible modal with human-readable fetched values.
 
 ## Run tests
 ```bash

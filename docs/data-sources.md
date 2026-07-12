@@ -1,7 +1,7 @@
 # Data sources
 
 ## Open-Meteo Marine API
-Adapter: `OpenMeteoMarineProvider`. It requests hourly wave height/direction/period, swell wave height/direction/period, wind-wave fields, sea-surface temperature, and current fields from the free Open-Meteo Marine endpoint. It is replaceable because licensing may differ for later commercial use.
+Adapter: `OpenMeteoMarineProvider`. It requests hourly wave height/direction/period, swell wave height/direction/period, wind-wave fields, sea-surface temperature, and current fields from the free Open-Meteo Marine endpoint. It is replaceable because licensing may differ for later commercial use. Provider refreshes are protected by a 30-minute bundle limit: all HTTP calls required for one provider refresh count as one bundle.
 
 ## Open-Meteo Weather API
 Adapter: `OpenMeteoWeatherProvider`. It requests wind speed/direction/gusts, air temperature, precipitation, cloud cover, and visibility.

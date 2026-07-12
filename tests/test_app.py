@@ -64,9 +64,27 @@ def test_spot_scoring_safety_stale_confidence_tide():
 def test_provider_failure_fallback_and_daypart_recommendations(client):
     r=login(client,'Patrick','loliking'); client.cookies.set('ww_session', r.cookies['ww_session'])
     h=client.get('/health').json()
-    assert h['providers']['ipma-open-data']=='degraded'
+    assert h['providers']['ipma-open-data']['status']=='degraded'
+    assert h['providers']['open-meteo-marine']['status']=='healthy'
+    assert '30-minute bundle limit' in h['providers']['open-meteo-marine']['rate_limit']
     p=client.get('/surf')
     assert 'Best surf spot of the day' in p.text and 'Morning' in p.text and 'Evening' in p.text
+    assert 'data-provider-button' in p.text and 'Human-readable data fetched' in p.text
+    assert 'Shaka' not in p.text  # avoid decorative term stuffing when not applicable
+
+def test_provider_bundle_rate_limit(client):
+    from app.database import SessionLocal
+    from app.models import ProviderFetch
+    from app.forecast_service import provider_can_fetch, PROVIDER_FETCH_INTERVAL
+    from datetime import datetime, timedelta, UTC
+    db=SessionLocal()
+    first=db.query(ProviderFetch).filter_by(provider_name='mock-open-meteo-fixture').first()
+    assert first is not None
+    allowed,last=provider_can_fetch(db,'mock-open-meteo-fixture', datetime.now(UTC))
+    assert allowed is False and last is not None
+    allowed_later,_=provider_can_fetch(db,'mock-open-meteo-fixture', datetime.now(UTC)+PROVIDER_FETCH_INTERVAL+timedelta(seconds=1))
+    assert allowed_later is True
+    db.close()
 
 def test_google_maps_url_spot_detail_and_all_routes(client):
     r=login(client,'David','surferking'); client.cookies.set('ww_session', r.cookies['ww_session'])
