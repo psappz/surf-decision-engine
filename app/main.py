@@ -199,11 +199,13 @@ def surf(request:Request, user=Depends(require_user), db:OrmSession=Depends(get_
     by={part:(rows[0] if rows else None) for part, rows in rankings.items()}
     alternatives={part:rows[1:3] for part, rows in rankings.items()}
     spots=db.query(SurfSpot).order_by(SurfSpot.name).all(); latest=db.query(MarineForecast).order_by(desc(MarineForecast.fetched_at)).first()
+    fav_ctx=favorite_context(db, user.id)
+    spots=sorted(spots, key=lambda s: (s.id not in fav_ctx['favorite_spot_ids'], s.name.lower()))
     spot_summaries={}
     for s in spots:
         candidates=[r for rows in rankings.values() for r in rows if r.spot_id==s.id]
         spot_summaries[s.id]=max(candidates, key=lambda r:r.score) if candidates else None
-    return templates.TemplateResponse('surf.html', {'request':request,'user':user,'date':date,'recommendations':by,'alternatives':alternatives,'spots':spots,'spot_summaries':spot_summaries,'csrf':request.state.csrf,'provider_status':provider_status(db),'newest_data':latest.fetched_at if latest else None, **favorite_context(db, user.id), **pref})
+    return templates.TemplateResponse('surf.html', {'request':request,'user':user,'date':date,'recommendations':by,'alternatives':alternatives,'spots':spots,'spot_summaries':spot_summaries,'csrf':request.state.csrf,'provider_status':provider_status(db),'newest_data':latest.fetched_at if latest else None, **fav_ctx, **pref})
 @app.get('/surf/spots/{slug}', response_class=HTMLResponse)
 def spot_detail(slug:str, request:Request, user=Depends(require_user), db:OrmSession=Depends(get_db)):
     pref=prefs(request, user); spot=db.query(SurfSpot).filter(SurfSpot.slug==slug).first()

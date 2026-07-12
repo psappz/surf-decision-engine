@@ -30,6 +30,24 @@ def spot_slugs():
     finally:
         db.close()
 
+def surf_order(html):
+    seen=[]
+    for slug in re.findall(r'action="/surf/spots/([^/]+)/favorite"', html):
+        if slug not in seen:
+            seen.append(slug)
+    return seen
+
+def test_favourites_move_to_top_of_surf_list(client):
+    login(client)
+    initial=surf_order(client.get('/surf').text)
+    assert len(initial) >= 4
+    later_slug=initial[3]
+    page=client.get('/surf')
+    client.post(f'/surf/spots/{later_slug}/favorite', data={'csrf_token':csrf(page.text),'favorite':'on','next':'/surf'}, follow_redirects=False)
+    reordered=surf_order(client.get('/surf').text)
+    assert reordered[0] == later_slug
+    assert reordered[1:] == [slug for slug in initial if slug != later_slug]
+
 def test_user_can_toggle_favourite_from_surf_table_and_detail(client):
     login(client)
     page=client.get('/surf')
