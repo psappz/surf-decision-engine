@@ -103,6 +103,25 @@ def test_google_maps_url_spot_detail_and_all_routes(client):
     page=client.get('/surf/spots/odeceixe')
     assert page.status_code==200
     assert 'https://www.google.com/maps/search/?api=1&query=' in page.text
+    assert 'https://www.openstreetmap.org/?mlat=' in page.text
+    assert 'Live webcams' in page.text
+    assert 'Windy webcams' in page.text
+    assert 'Odeceixe live webcam' in page.text
+    assert 'https://beachcam.meo.pt/livecams/odeceixe' in page.text
+    assert 'https://www.windy.com/37.442/-8.798?37.442,-8.798,13' in page.text
+    assert '<iframe' not in page.text
+    assert 'Access sketch' not in page.text
+    assert 'Access map pending verification' not in page.text
+    assert '/static/access-maps/' not in page.text
+    from app.database import SessionLocal
+    from app.models import SurfSpot
+    db=SessionLocal()
+    try:
+        spot=db.query(SurfSpot).filter_by(slug='odeceixe').one()
+        assert spot.access_map_id is None
+        assert spot.access_map_asset is None
+    finally:
+        db.close()
     assert 'onda-experto24-logo.png' in page.text
     assert 'wavewatch-logo.png' not in page.text
     assert 'action="/logout"' not in page.text
@@ -146,6 +165,40 @@ def test_i18n_language_and_proficiency_controls(client):
     pt=client.get('/surf')
     assert 'Melhor surf spot do dia' in pt.text
     assert 'Preferência de dificuldade' in pt.text
+
+
+def test_admin_page_beach_spot_user_and_audit(client):
+    # no public navigation link; admins remember /adm
+    r=login(client,'Patrick','loliking'); client.cookies.set('ww_session', r.cookies['ww_session'])
+    surf=client.get('/surf')
+    assert surf.status_code == 200 and 'href="/adm"' not in surf.text
+    adm=client.get('/adm')
+    assert adm.status_code == 200
+    assert 'WaveWatch admin' in adm.text and 'Add beach' in adm.text and 'Create new user' in adm.text
+    assert 'Last 5 user logins' in adm.text and 'data-user-modal' in adm.text
+    beach=client.post('/adm/beaches', data={'name':'Praia Test Admin','latitude':'37.1','longitude':'-8.9','webcam_urls':'https://example.test/beachcam'}, files={'images':('beach.jpg',b'img','image/jpeg')}, follow_redirects=False)
+    assert beach.status_code == 303
+    from app.database import SessionLocal
+    from app.models import Beach, SurfSpot, User, LoginEvent, PageAccess, MediaAsset, WebcamLink
+    db=SessionLocal()
+    b=db.query(Beach).filter_by(name='Praia Test Admin').one()
+    assert b.webcam_urls == ['https://example.test/beachcam']
+    assert db.query(MediaAsset).filter_by(entity_type='beach', entity_id=b.id).count() == 1
+    assert db.query(WebcamLink).filter_by(entity_type='beach', entity_id=b.id).count() == 1
+    db.close()
+    spot=client.post('/adm/spots', data={'beach_id':str(b.id),'name':'Admin Peak','latitude':'37.11','longitude':'-8.91','webcam_urls':'https://example.test/spotcam'}, files={'images':('spot.jpg',b'img','image/jpeg')}, follow_redirects=False)
+    assert spot.status_code == 303
+    user_resp=client.post('/adm/users', data={'username':'NewSurfer','temp_password':'temp12345'}, follow_redirects=False)
+    assert user_resp.status_code == 303
+    db=SessionLocal()
+    try:
+        assert db.query(SurfSpot).filter_by(slug='admin-peak').one().webcam_url == 'https://example.test/spotcam'
+        assert db.query(User).filter_by(username_lower='newsurfer').one().role == 'user'
+        assert db.query(LoginEvent).count() >= 1
+        assert db.query(PageAccess).filter(PageAccess.path=='/adm').count() >= 1
+    finally: db.close()
+    client.cookies.clear(); nr=login(client,'NewSurfer','temp12345'); client.cookies.set('ww_session', nr.cookies['ww_session'])
+    assert client.get('/adm').status_code == 404
 
 
 def test_loliking_and_david_default_to_german(client):

@@ -21,7 +21,9 @@ services:
     build: .
     container_name: wavewatch-app
     restart: unless-stopped
-    env_file: .env
+    env_file:
+      - .env
+      - ../secrets/copernicus.env
     environment:
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-wavewatch}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-wavewatch}
       SECURE_COOKIES: "true"
@@ -32,6 +34,24 @@ services:
     networks:
       - internal
       - smartfinca_default
+
+  worker:
+    build: .
+    container_name: wavewatch-worker
+    restart: unless-stopped
+    command: ["sleep", "infinity"]
+    env_file:
+      - .env
+      - ../secrets/copernicus.env
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-wavewatch}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-wavewatch}
+      SECURE_COOKIES: "true"
+      APP_ENV: production
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - internal
 
 volumes:
   wavewatch_pg:

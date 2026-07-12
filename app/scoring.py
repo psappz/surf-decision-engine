@@ -88,9 +88,16 @@ def local_day_windows(day, tz='Europe/Lisbon'):
         start=datetime(day.year,day.month,day.day,a,tzinfo=z).astimezone(UTC); end=datetime(day.year,day.month,day.day,b,tzinfo=z).astimezone(UTC); out[name]=(start,end)
     return out
 def aggregate_daypart(spot, marine_points, weather_points, tide_points, daypart, profile='advanced'):
+    def nearest_values(points, target, max_minutes=90):
+        if not isinstance(points, dict) or not points:
+            return {}
+        best_time = min(points.keys(), key=lambda ts: abs((ts - target).total_seconds()))
+        if abs((best_time - target).total_seconds()) <= max_minutes * 60:
+            return points.get(best_time, {}) or {}
+        return {}
     vals=[]; summaries=[]
     for t,m in marine_points:
-        w=weather_points.get(t,{}) if isinstance(weather_points,dict) else {}; tide=tide_points.get(t,{}) if isinstance(tide_points,dict) else {}
+        w=nearest_values(weather_points,t); tide=nearest_values(tide_points,t)
         res=score_point(spot,m,w,tide, profile=profile); vals.append(res['score']); summaries.append((res,m,w,tide,t))
     if not vals: return None
     volatility=max(vals)-min(vals) if len(vals)>1 else 0; med=max(0, median(vals)-volatility*.15); best=max(summaries,key=lambda x:x[0]['score'])

@@ -31,9 +31,17 @@ class IPMAProvider(MarineForecastProvider):
         # Regional corroboration shell. Exact point marine feed is not assumed.
         return []
 class CopernicusMarineProvider(MarineForecastProvider):
-    name='copernicus-marine-disabled'
-    enabled=False
-    async def fetch_forecast(self, latitude, longitude, start, end): return []
+    name='copernicus-marine'
+    async def fetch_forecast(self, latitude, longitude, start, end):
+        from pathlib import Path
+        from .copernicus import load_copernicus_config, parse_copernicus_netcdf
+        config = load_copernicus_config()
+        if not config.is_ready:
+            return []
+        output = config.cache_dir / 'wavewatch-copernicus-latest.nc'
+        if not output.exists():
+            return []
+        return parse_copernicus_netcdf(Path(output), latitude, longitude, config.variable_map or {}, self.name)
 class TideProvider(MarineForecastProvider):
     name='astronomical-tide-estimate'
     async def fetch_forecast(self, latitude, longitude, start, end):

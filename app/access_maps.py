@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -10,8 +9,6 @@ ROOT = Path(__file__).resolve().parents[1]
 CONFIG_DIR = ROOT / 'data' / 'access-maps'
 GENERATED_DIR = ROOT / 'data' / 'access-maps-generated'
 STATIC_DIR = ROOT / 'app' / 'static' / 'access-maps'
-
-VALID_STATUSES = {'missing', 'generated', 'needs_review', 'verified', 'outdated'}
 
 @dataclass(frozen=True)
 class AccessMapConfig:
@@ -86,39 +83,3 @@ def spot_to_access_map(configs: dict[str, AccessMapConfig] | None = None) -> dic
 
 def osm_link(latitude: float, longitude: float, zoom: int = 16) -> str:
     return f'https://www.openstreetmap.org/?mlat={latitude}&mlon={longitude}#map={zoom}/{latitude}/{longitude}'
-
-
-def metadata_for(map_id: str) -> dict[str, Any] | None:
-    path = GENERATED_DIR / f'{map_id}.json'
-    if not path.exists():
-        return None
-    return json.loads(path.read_text(encoding='utf-8'))
-
-
-def access_map_context(spot) -> dict[str, Any]:
-    cfg = spot_to_access_map().get(spot.slug)
-    if not cfg:
-        return {'status': 'missing', 'config': None, 'asset_exists': False, 'notes': ['No access-map configuration is assigned to this spot.']}
-    asset = f'/static/access-maps/{cfg.id}.svg'
-    asset_path = STATIC_DIR / f'{cfg.id}.svg'
-    status = getattr(spot, 'access_map_status', None) or ('needs_review' if asset_path.exists() else 'missing')
-    if status not in VALID_STATUSES:
-        status = 'missing'
-    meta = metadata_for(cfg.id)
-    warnings = []
-    if meta:
-        warnings = list(meta.get('warnings') or [])
-    if not asset_path.exists():
-        warnings.append('Access sketch is not generated yet because local OpenStreetMap vector data has not been provided.')
-    return {
-        'config': cfg,
-        'asset': asset,
-        'asset_exists': asset_path.exists(),
-        'status': status,
-        'metadata': meta,
-        'warnings': warnings,
-        'notes': list(cfg.notes),
-        'external_navigation_url': getattr(spot, 'external_navigation_url', None) or spot.maps_url,
-        'osm_url': osm_link(spot.latitude, spot.longitude),
-        'alt': f'Access sketch from the regional road to {spot.name}, showing final vehicle access, parking, walking access and surf zones.',
-    }

@@ -10,7 +10,7 @@ Adapter: `OpenMeteoWeatherProvider`. It requests wind speed/direction/gusts, air
 Adapter shell: `IPMAProvider`. It is marked degraded because no precise spot-level marine endpoint has been selected for this local prototype without relying on unstable scraping. It should be used as regional corroboration when implemented.
 
 ## Copernicus Marine
-Adapter boundary exists and is disabled by default. Product candidate: `IBI_ANALYSISFORECAST_WAV_005_005`. Do not fabricate values; enable only with valid configuration and non-interactive runtime credentials.
+Adapter: `CopernicusMarineProvider`. Product candidate: `GLOBAL_ANALYSISFORECAST_WAV_001_027`; selected forecast dataset id: `cmems_mod_glo_wav_anfc_0.083deg_PT3H-i`. The companion `cmems_mod_wav_anfc_0.083deg_static` dataset is static metadata/bathymetry-style support data, not the time-varying forecast feed for scoring. The provider is disabled until the Copernicus Marine Toolbox, non-interactive credentials, the verified forecast `COPERNICUSMARINE_DATASET_ID`, and a verified `COPERNICUSMARINE_VARIABLE_MAP_JSON` are configured. Do not fabricate dataset ids, variable names, or values. Implementation notes and the pending `describe` checklist are in `docs/copernicus-marine-integration.md`.
 
 ## Tide
 The prototype uses an open astronomical estimate adapter and labels tide data as estimated. Replace with official Portuguese hydrographic data if a stable public endpoint is chosen.

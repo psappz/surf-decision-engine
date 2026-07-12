@@ -6,3 +6,5 @@ wavewatch.egg-info/
 .pytest_cache/
 .env
 screenshots/
+data/provider-cache/
+app/static/uploads/

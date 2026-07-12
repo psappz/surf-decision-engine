@@ -29,13 +29,33 @@ Raster OSM tiles are not acceptable as source material.
 
 The preferred production workflow is offline or developer-operated route extraction using OSM data. Public shared API services may only be used during generation and must never be called during normal page rendering or automated tests.
 
+## Source acquisition commands
+
+Prepare one Overpass query per configured access map without calling the network from the app:
+
+```bash
+python -m app.tools.prepare_access_osm_queries
+# or one spot:
+python -m app.tools.prepare_access_osm_queries --map-id odeceixe --radius-m 1800
+```
+
+This writes `.overpass.ql` files under `data/access-maps-generated/overpass-queries/`. Run those queries manually/developer-side against Overpass or a local OSM stack, save the JSON response, then convert it locally:
+
+```bash
+python -m app.tools.convert_overpass_access_fixture /path/to/odeceixe.overpass.json --map-id odeceixe
+```
+
+The converter writes `data/access-maps-generated/<id>.source.geojson`. It imports roads, tracks, paths, parking, beach and coastline features that are present in the OSM response. Driving and walking route features still need review/curation before the SVG should be treated as route guidance.
+
 ## Generation command
 
 ```bash
 python -m app.tools.generate_access_maps
+# or one map:
+python -m app.tools.generate_access_maps --map-id odeceixe
 ```
 
-The current command loads `data/access-maps/*.yaml`, checks for local OSM-derived fixtures under `data/access-maps-generated/*.source.geojson`, writes audit metadata under `data/access-maps-generated/*.json`, and refuses to create SVGs when the legal raw data source is missing.
+The command loads `data/access-maps/*.yaml`, checks for local OSM-derived fixtures under `data/access-maps-generated/*.source.geojson`, writes audit metadata under `data/access-maps-generated/*.json`, and refuses to create SVGs when the legal raw data source is missing. When a local GeoJSON fixture exists, it renders `app/static/access-maps/<id>.svg` with OSM attribution and `requires_manual_review: true` metadata.
 
 ## Configuration format
 

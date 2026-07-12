@@ -1,5 +1,5 @@
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
-from sqlalchemy import String, Integer, Float, Boolean, Text, DateTime, Date, ForeignKey, JSON
+from sqlalchemy import String, Integer, Float, Boolean, Text, DateTime, Date, ForeignKey, JSON, BigInteger, UniqueConstraint
 from datetime import datetime
 class Base(DeclarativeBase): pass
 class User(Base):
@@ -24,3 +24,50 @@ class SpotScore(Base):
     __tablename__='spot_scores'; id:Mapped[int]=mapped_column(primary_key=True); spot_id:Mapped[int]=mapped_column(ForeignKey('surf_spots.id'),index=True); daypart:Mapped[str]=mapped_column(String(20),index=True); score_date:Mapped[object]=mapped_column(Date); score:Mapped[float]=mapped_column(Float); confidence_label:Mapped[str]=mapped_column(String(40)); classification:Mapped[str]=mapped_column(String(80)); explanation:Mapped[str|None]=mapped_column(Text); summary:Mapped[dict|None]=mapped_column(JSON); created_at:Mapped[datetime]=mapped_column(DateTime(timezone=True)); spot=relationship('SurfSpot')
 class DailyRecommendation(Base):
     __tablename__='daily_recommendations'; id:Mapped[int]=mapped_column(primary_key=True); score_date:Mapped[object]=mapped_column(Date,index=True); daypart:Mapped[str]=mapped_column(String(20),index=True); spot_score_id:Mapped[int]=mapped_column(ForeignKey('spot_scores.id')); created_at:Mapped[datetime]=mapped_column(DateTime(timezone=True)); spot_score=relationship('SpotScore')
+class Beach(Base):
+    __tablename__='beaches'; id:Mapped[int]=mapped_column(primary_key=True); name:Mapped[str]=mapped_column(String(160),unique=True,index=True); latitude:Mapped[float]=mapped_column(Float); longitude:Mapped[float]=mapped_column(Float); image_paths:Mapped[list|None]=mapped_column(JSON,nullable=True); webcam_urls:Mapped[list|None]=mapped_column(JSON,nullable=True); created_at:Mapped[datetime]=mapped_column(DateTime(timezone=True))
+    @property
+    def maps_url(self): return f"https://www.google.com/maps/search/?api=1&query={self.latitude},{self.longitude}"
+class LoginEvent(Base):
+    __tablename__='login_events'; id:Mapped[int]=mapped_column(primary_key=True); user_id:Mapped[int]=mapped_column(ForeignKey('users.id'),index=True); logged_in_at:Mapped[datetime]=mapped_column(DateTime(timezone=True),index=True); ip_address:Mapped[str|None]=mapped_column(String(80)); user_agent:Mapped[str|None]=mapped_column(Text); user=relationship('User')
+class PageAccess(Base):
+    __tablename__='page_accesses'; id:Mapped[int]=mapped_column(primary_key=True); user_id:Mapped[int]=mapped_column(ForeignKey('users.id'),index=True); accessed_at:Mapped[datetime]=mapped_column(DateTime(timezone=True),index=True); method:Mapped[str]=mapped_column(String(12)); path:Mapped[str]=mapped_column(String(500)); user_agent:Mapped[str|None]=mapped_column(Text); user=relationship('User')
+class MediaAsset(Base):
+    __tablename__='media_assets'; id:Mapped[int]=mapped_column(primary_key=True); entity_type:Mapped[str]=mapped_column(String(30),index=True); entity_id:Mapped[int]=mapped_column(Integer,index=True); path:Mapped[str]=mapped_column(String(500)); original_filename:Mapped[str|None]=mapped_column(String(255)); created_at:Mapped[datetime]=mapped_column(DateTime(timezone=True))
+class WebcamLink(Base):
+    __tablename__='webcam_links'; id:Mapped[int]=mapped_column(primary_key=True); entity_type:Mapped[str]=mapped_column(String(30),index=True); entity_id:Mapped[int]=mapped_column(Integer,index=True); url:Mapped[str]=mapped_column(String(800)); label:Mapped[str|None]=mapped_column(String(160)); created_at:Mapped[datetime]=mapped_column(DateTime(timezone=True))
+class CopernicusPublication(Base):
+    __tablename__='copernicus_publications'
+    __table_args__=(UniqueConstraint('provider','dataset_id','publication_identity',name='uq_copernicus_publication_identity'),)
+    id:Mapped[int]=mapped_column(primary_key=True)
+    provider:Mapped[str]=mapped_column(String(100),default='copernicus-marine',index=True)
+    product_id:Mapped[str]=mapped_column(String(160))
+    dataset_id:Mapped[str]=mapped_column(String(220),index=True)
+    publication_identity:Mapped[str]=mapped_column(String(500),index=True)
+    model_cycle_time:Mapped[datetime|None]=mapped_column(DateTime(timezone=True),nullable=True)
+    latest_available_forecast_time:Mapped[datetime|None]=mapped_column(DateTime(timezone=True),nullable=True)
+    detected_at:Mapped[datetime|None]=mapped_column(DateTime(timezone=True),nullable=True)
+    ingestion_started_at:Mapped[datetime|None]=mapped_column(DateTime(timezone=True),nullable=True)
+    ingestion_completed_at:Mapped[datetime|None]=mapped_column(DateTime(timezone=True),nullable=True)
+    status:Mapped[str]=mapped_column(String(40),index=True)
+    error:Mapped[str|None]=mapped_column(Text,nullable=True)
+    download_size:Mapped[int|None]=mapped_column(BigInteger,nullable=True)
+    checksum:Mapped[str|None]=mapped_column(String(128),nullable=True)
+    raw_file_path:Mapped[str|None]=mapped_column(String(800),nullable=True)
+    metadata_json:Mapped[dict|None]=mapped_column(JSON,nullable=True)
+    created_at:Mapped[datetime]=mapped_column(DateTime(timezone=True))
+    updated_at:Mapped[datetime]=mapped_column(DateTime(timezone=True))
+class CopernicusIngestionJob(Base):
+    __tablename__='copernicus_ingestion_jobs'
+    id:Mapped[int]=mapped_column(primary_key=True)
+    publication_id:Mapped[int]=mapped_column(ForeignKey('copernicus_publications.id'),index=True)
+    status:Mapped[str]=mapped_column(String(40),index=True)
+    lease_token:Mapped[str|None]=mapped_column(String(128),nullable=True)
+    lease_until:Mapped[datetime|None]=mapped_column(DateTime(timezone=True),nullable=True)
+    attempts:Mapped[int]=mapped_column(Integer,default=0)
+    last_error:Mapped[str|None]=mapped_column(Text,nullable=True)
+    created_at:Mapped[datetime]=mapped_column(DateTime(timezone=True))
+    updated_at:Mapped[datetime]=mapped_column(DateTime(timezone=True))
+    started_at:Mapped[datetime|None]=mapped_column(DateTime(timezone=True),nullable=True)
+    completed_at:Mapped[datetime|None]=mapped_column(DateTime(timezone=True),nullable=True)
+    publication=relationship('CopernicusPublication')

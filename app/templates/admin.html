@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% block body %}
+<header class="top app-header compact">
+  <div class="brand-lockup"><img class="site-logo" src="/static/onda-experto24-logo.png" alt="Onda Experto 24 logo"></div>
+  <nav><a class="button-link" href="/surf">Back to lineup</a></nav>
+</header>
+<main class="admin-page">
+  <section class="shell-card admin-hero">
+    <p class="eyebrow">Admin only</p>
+    <h1>WaveWatch admin</h1>
+    <p>Hidden operational page for Patrick/admin users. No public navigation link is rendered.</p>
+  </section>
+
+  <section class="shell-card admin-section">
+    <h2>Add beach</h2>
+    <form method="post" action="/adm/beaches" enctype="multipart/form-data" class="admin-form">
+      <label>Name<input required name="name" placeholder="Praia de Odeceixe"></label>
+      <label>Latitude<input required name="latitude" type="number" step="0.000001"></label>
+      <label>Longitude<input required name="longitude" type="number" step="0.000001"></label>
+      <label class="wide">Webcam URLs<textarea name="webcam_urls" rows="3" placeholder="One URL per line"></textarea></label>
+      <label class="wide">Images<input name="images" type="file" accept="image/*" multiple></label>
+      <button>Add beach</button>
+    </form>
+    <div class="tablewrap"><table><thead><tr><th>Beach</th><th>GPS</th><th>Webcams</th></tr></thead><tbody>{% for b in beaches %}<tr><td>{{ b.name }}</td><td><a href="{{ b.maps_url|safe }}" target="_blank" rel="noopener noreferrer">{{ b.latitude }}, {{ b.longitude }}</a></td><td>{% for u in b.webcam_urls or [] %}<a href="{{ u|safe }}" target="_blank" rel="noopener noreferrer">webcam</a>{% if not loop.last %}<br>{% endif %}{% endfor %}</td></tr>{% endfor %}</tbody></table></div>
+  </section>
+
+  <section class="shell-card admin-section">
+    <h2>Add surfspot on beach</h2>
+    <form method="post" action="/adm/spots" enctype="multipart/form-data" class="admin-form">
+      <label>Beach<select required name="beach_id">{% for b in beaches %}<option value="{{ b.id }}">{{ b.name }}</option>{% endfor %}</select></label>
+      <label>Name<input required name="name" placeholder="North peak"></label>
+      <label>Latitude<input required name="latitude" type="number" step="0.000001"></label>
+      <label>Longitude<input required name="longitude" type="number" step="0.000001"></label>
+      <label class="wide">Webcam URLs<textarea name="webcam_urls" rows="3" placeholder="One URL per line"></textarea></label>
+      <label class="wide">Images<input name="images" type="file" accept="image/*" multiple></label>
+      <button>Add surfspot</button>
+    </form>
+    <div class="tablewrap"><table><thead><tr><th>Spot</th><th>Beach</th><th>GPS</th><th>Webcam</th></tr></thead><tbody>{% for s in spots %}<tr><td>{{ s.name }}</td><td>{{ s.beach_name }}</td><td><a href="{{ s.maps_url|safe }}" target="_blank" rel="noopener noreferrer">{{ s.latitude }}, {{ s.longitude }}</a></td><td>{% if s.webcam_url %}<a href="{{ s.webcam_url|safe }}" target="_blank" rel="noopener noreferrer">webcam</a>{% endif %}</td></tr>{% endfor %}</tbody></table></div>
+  </section>
+
+  <section class="shell-card admin-section">
+    <h2>Create new user</h2>
+    <form method="post" action="/adm/users" class="admin-form compact-form">
+      <label>Username<input required name="username"></label>
+      <label>Temp password<input required name="temp_password" type="text" autocomplete="new-password"></label>
+      <button>Create user</button>
+    </form>
+  </section>
+
+  <section class="shell-card admin-section">
+    <h2>Last 5 user logins</h2>
+    <div class="tablewrap"><table><thead><tr><th>User</th><th>Login time</th><th>IP</th></tr></thead><tbody>{% for ev in login_events %}<tr><td><button class="link-button" data-user-modal="user-{{ ev.user.id }}">{{ ev.user.username }}</button></td><td>{{ ev.logged_in_at }}</td><td>{{ ev.ip_address or 'local' }}</td></tr>{% endfor %}</tbody></table></div>
+    {% for u in users %}
+    <div class="modal audit-modal" id="user-{{ u.id }}" aria-hidden="true" role="dialog" aria-modal="true">
+      <div class="modal-card">
+        <button class="modal-close" data-close-modal aria-label="Close">×</button>
+        <h2>{{ u.username }} · last 20 page accesses</h2>
+        {% for group in accesses[u.id] %}
+          <h3>{{ group.day }}</h3>
+          <ul class="audit-list">{% for row in group.rows %}<li><span>{{ row.accessed_at }}</span> <strong>{{ row.method }}</strong> {{ row.path }}</li>{% endfor %}</ul>
+        {% else %}<p>No page accesses recorded yet.</p>{% endfor %}
+      </div>
+    </div>
+    {% endfor %}
+  </section>
+</main>
+<footer class="site-footer"><a class="logout-link" href="/logout">logout</a></footer>
+<script>
+(function(){
+  function closeAll(){document.querySelectorAll('.audit-modal').forEach(m=>m.setAttribute('aria-hidden','true'));}
+  document.querySelectorAll('[data-user-modal]').forEach(btn=>btn.addEventListener('click',()=>{closeAll();document.getElementById(btn.dataset.userModal).setAttribute('aria-hidden','false');}));
+  document.querySelectorAll('[data-close-modal]').forEach(btn=>btn.addEventListener('click',closeAll));
+  document.addEventListener('keydown',e=>{if(e.key==='Escape') closeAll();});
+})();
+</script>
+{% endblock %}
