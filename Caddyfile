@@ -1,3 +1,6 @@
 http://localhost:8080 {
+  request_body {
+    max_size 60MB
+  }
   reverse_proxy app:8000
 }

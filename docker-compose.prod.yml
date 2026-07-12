@@ -28,6 +28,12 @@ services:
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-wavewatch}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-wavewatch}
       SECURE_COOKIES: "true"
       APP_ENV: production
+      MEDIA_ROOT: /data/media
+      MAX_UPLOAD_FILES: "10"
+      MAX_UPLOAD_FILE_MB: "15"
+      MAX_UPLOAD_TOTAL_MB: "60"
+    volumes:
+      - wavewatch_media:/data/media
     depends_on:
       db:
         condition: service_healthy
@@ -47,6 +53,12 @@ services:
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-wavewatch}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-wavewatch}
       SECURE_COOKIES: "true"
       APP_ENV: production
+      MEDIA_ROOT: /data/media
+      MAX_UPLOAD_FILES: "10"
+      MAX_UPLOAD_FILE_MB: "15"
+      MAX_UPLOAD_TOTAL_MB: "60"
+    volumes:
+      - wavewatch_media:/data/media
     depends_on:
       db:
         condition: service_healthy
@@ -55,6 +67,7 @@ services:
 
 volumes:
   wavewatch_pg:
+  wavewatch_media:
 
 networks:
   internal:

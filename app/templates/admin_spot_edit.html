@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block body %}
+<header class="top app-header compact"><div class="brand-lockup"><img class="site-logo" src="/static/onda-experto24-logo.png" alt="Onda Experto 24 logo"></div><nav><a class="button-link" href="/adm">Admin</a><a class="button-link" href="/surf/spots/{{ spot.slug }}" target="_blank" rel="noopener noreferrer">Open spot</a></nav></header>
+<main class="admin-page">
+<section class="shell-card admin-hero"><p class="eyebrow">Admin spot editor</p><h1>Edit {{ spot.name }}</h1><p>Fields are grouped for operator-owned spot data only; wraparound direction ranges remain valid.</p></section>
+<section class="shell-card admin-section">
+<form method="post" action="/adm/spots/{{ spot.id }}" class="admin-form spot-edit-form">
+<input type="hidden" name="csrf_token" value="{{ csrf }}">
+{% set sections = [
+('Identity',['code','slug','name','beach_name','zone_name','is_active_for_recommendations']),
+('Location',['latitude','longitude','external_navigation_url']),
+('Description',['description','spot_type','difficulty','seed_source_note']),
+('Swell',['preferred_swell_direction_min','preferred_swell_direction_max','acceptable_swell_direction_min','acceptable_swell_direction_max','preferred_swell_height_min','preferred_swell_height_max','maximum_safe_swell_height_for_profile','preferred_period_min','preferred_period_max']),
+('Wind',['preferred_wind_direction_min','preferred_wind_direction_max']),
+('Tide',['preferred_tide_min','preferred_tide_max','tide_preference']),
+('Safety and access',['hazards','access_notes']),
+('Recommendation configuration',['exposure_factor','shelter_factor','base_confidence']),
+('Access map',['access_map_id','access_map_asset','access_map_status'])] %}
+{% for title, names in sections %}<fieldset class="wide"><legend>{{ title }}</legend>{% for field in names %}{% if field == 'is_active_for_recommendations' %}<label><input type="checkbox" name="{{ field }}" {% if spot.is_active_for_recommendations %}checked{% endif %}> Active for recommendations</label>{% else %}<label class="{% if field in ['description','hazards','access_notes','seed_source_note'] %}wide{% endif %}">{{ field.replace('_',' ') }}{% if field in ['description','hazards','access_notes','seed_source_note'] %}<textarea name="{{ field }}" rows="3">{{ spot|attr(field) or '' }}</textarea>{% else %}<input name="{{ field }}" value="{{ spot|attr(field) or '' }}" {% if field in float_fields %}type="number" step="0.000001"{% endif %}>{% endif %}{% if errors.get(field) %}<span class="field-error">{{ errors[field] }}</span>{% endif %}</label>{% endif %}{% endfor %}</fieldset>{% endfor %}
+<button>Save spot</button>
+</form>
+</section>
+<section id="webcams" class="shell-card admin-section"><h2>Webcams</h2><p>Approved links must point directly to the webcam operator, owner, surf school, municipality, hotel, bar, or other organization operating the camera. Do not store aggregator pages.</p>
+<form method="post" action="/adm/spots/{{ spot.id }}/webcams" class="admin-form compact-form"><input type="hidden" name="csrf_token" value="{{ csrf }}"><label>Title<input required name="title"></label><label>Operator / rights holder<input required name="operator_name"></label><label class="wide">URL<input required name="url" type="url" placeholder="https://operator.example/webcam"></label><label>Source type<select name="approved_source_type"><option>operator</option><option>owner</option><option>official_partner</option><option>unknown</option></select></label><label><input type="checkbox" name="is_active" checked> active</label><label><input type="checkbox" name="allow_http"> explicit HTTP fallback</label><label class="wide">Description<textarea name="description" rows="2"></textarea></label><button>Add approved webcam</button></form>
+{% for cam in webcams %}<form method="post" action="/adm/webcams/{{ cam.id }}/update" class="admin-form compact-form webcam-admin-row"><input type="hidden" name="csrf_token" value="{{ csrf }}"><label>Order<input name="sort_order" type="number" value="{{ cam.sort_order }}"></label><label>Title<input name="title" value="{{ cam.title }}"></label><label>Operator<input name="operator_name" value="{{ cam.operator_name }}"></label><label class="wide">URL<input name="url" value="{{ cam.url }}"></label><label><input type="checkbox" name="is_active" {% if cam.is_active %}checked{% endif %}> active</label><label>Source<select name="approved_source_type"><option {% if cam.approved_source_type=='operator' %}selected{% endif %}>operator</option><option {% if cam.approved_source_type=='owner' %}selected{% endif %}>owner</option><option {% if cam.approved_source_type=='official_partner' %}selected{% endif %}>official_partner</option><option {% if cam.approved_source_type=='unknown' %}selected{% endif %}>unknown</option></select></label><label class="wide">Description<textarea name="description" rows="2">{{ cam.description or '' }}</textarea></label><button>Update webcam</button></form><form method="post" action="/adm/webcams/{{ cam.id }}/delete" onsubmit="return confirm('Delete webcam link?')"><input type="hidden" name="csrf_token" value="{{ csrf }}"><button class="danger">Delete webcam</button></form>{% else %}<p>No approved webcams yet.</p>{% endfor %}
+</section>
+<section class="shell-card admin-section"><h2>Uploaded photos</h2>{% for photo in photos %}<figure class="admin-photo"><img src="/media/{{ photo.thumbnail_path }}" loading="lazy" alt="spot photo"><figcaption>{{ photo.status }} · {{ photo.uploaded_by.username }} · {{ photo.created_at }}</figcaption></figure>{% else %}<p>No photos uploaded for this spot yet.</p>{% endfor %}</section>
+</main><footer class="site-footer"><a class="logout-link" href="/logout">logout</a></footer>
+{% endblock %}

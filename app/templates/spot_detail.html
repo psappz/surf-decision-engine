@@ -43,18 +43,36 @@
       <dt>{{ t('last_update') }}</dt><dd>{% if latest %}{{ latest.fetched_at }}{% else %}No forecast{% endif %}</dd>
     </dl>
   </article>
-  {% if webcam_links %}
-  <section class="webcam-panel shell-card">
-    <p class="eyebrow">Live webcams</p>
-    <h2>Nearby webcam check</h2>
-    <p>Open an external webcam source before paddling out. The app keeps these as click-to-open links so external providers are not contacted from the private local page unless you choose one.</p>
+  <section id="webcams" class="webcam-panel shell-card">
+    <p class="eyebrow">Operator-owned links only</p>
+    <h2>Webcams</h2>
+    {% if approved_webcams %}
     <div class="webcam-links">
-      {% for link in webcam_links %}
-      <a class="button-link" href="{{ link.url|safe }}" rel="noopener noreferrer" target="_blank">{{ link.label }} <small>{{ link.source }}</small></a>
+      {% for link in approved_webcams %}
+      <article class="card webcam-card"><h3>{{ link.title }}</h3><p><strong>Operator:</strong> {{ link.operator_name }}</p>{% if link.description %}<p>{{ link.description }}</p>{% endif %}<a class="button-link" href="{{ link.url|safe }}" rel="noopener noreferrer" target="_blank">Open webcam</a></article>
       {% endfor %}
     </div>
+    {% else %}<p>No approved webcam link is currently available for this spot.</p>{% endif %}
+    <form method="post" action="/surf/spots/{{ spot.slug }}/webcam-suggestions" class="admin-form compact-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf }}">
+      <p class="hint">Only submit links that point directly to the webcam operator, owner, surf school, municipality, hotel, bar, or other organization operating the camera. Do not submit aggregator pages.</p>
+      <label class="wide">Webcam URL<input required name="suggested_url" type="url" placeholder="https://operator.example/webcam"></label>
+      <label>Suggested title<input required name="suggested_title" value="{{ spot.name }} webcam"></label>
+      <label>Operator or owner<input required name="suggested_operator_name"></label>
+      <label class="wide">Optional note<textarea name="submitter_note" rows="2"></textarea></label>
+      <button>Submit webcam link for review</button>
+    </form>
   </section>
-  {% endif %}
+  <section id="photos" class="shell-card spot-photos">
+    <p class="eyebrow">Community uploads</p><h2>Spot photos</h2>
+    {% if photos %}<div class="photo-grid">{% for photo in photos %}<figure><a href="/media/{{ photo.display_path }}" target="_blank" rel="noopener noreferrer"><img src="/media/{{ photo.thumbnail_path }}" loading="lazy" alt="Uploaded photo for {{ spot.name }}"></a><figcaption>{{ photo.uploaded_by.username }} · {{ photo.created_at.date() }}{% if photo.caption %}<br>{{ photo.caption }}{% endif %}</figcaption></figure>{% endfor %}</div>{% else %}<p>No uploaded photos are currently available for this spot.</p>{% endif %}
+    <form method="post" action="/surf/spots/{{ spot.slug }}/photos" enctype="multipart/form-data" class="upload-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf }}">
+      <label class="drop-zone" tabindex="0"><span>Drag images here<br>or<br>Click to select images</span><input id="spot-photo-input" name="images" type="file" accept="image/jpeg,image/png,image/webp" multiple></label>
+      <p id="selected-files" class="hint">JPEG, PNG or WebP. Maximum 10 files, 15 MB each.</p>
+      <label>Caption <input name="caption" maxlength="500"></label><button>Upload photos</button>
+    </form>
+  </section>
   <section><p class="eyebrow">{{ t('session_scores') }}</p><h2>{{ t('current_forecast') }}</h2><div class="cards">
     {% for part in ['morning','midday','evening'] %}{% set sc=scores.get(part) %}
     <article class="card"><h3>{{ t(part) }} set</h3>{% if sc %}<p class="score-line">{{ surf_call(sc.score, sc.confidence_label) }} · {{ classification_label(sc.classification) }} · {{ sc.score }}/100 · {{ sc.confidence_label }}</p><p>{{ t('estimated_breaking') }} {{ sc.summary.estimated_breaking_range[0] }}–{{ sc.summary.estimated_breaking_range[1] }} m</p>{% set source = sc.summary.provider_points[0] if sc.summary.provider_points else none %}{% if sc.summary.provider_points|length > 1 %}<p class="provider-points-label">Provider comparison:</p><div class="provider-points">{% for p in sc.summary.provider_points %}<span class="provider-point" title="{{ p.tooltip }}">{{ p.provider }}: {{ p.wave_height }} m · {{ p.wave_direction }}° · {{ p.wave_period }} s</span>{% endfor %}</div>{% elif source %}<p><span class="provider-source-note" title="{{ source.tooltip }}">Source: {{ source.provider }}</span></p>{% endif %}<p>{{ sc.explanation }}</p>{% else %}<p>{{ t('no_score') }}</p>{% endif %}</article>
@@ -68,4 +86,16 @@
 </main>
 <footer class="site-footer"><a class="logout-link" href="/logout">logout</a></footer>
 <div class="modal" data-provider-modal aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="provider-modal-title"><div class="modal-card"><button class="modal-close" aria-label="{{ t('close') }}">×</button><h2 id="provider-modal-title" data-modal-title>Provider</h2><p><span data-modal-status class="status-pill"></span></p><h3>{{ t('why_status') }}</h3><p data-modal-reason></p><h3>{{ t('last_bundle') }}</h3><p data-modal-fetched></p><h3>{{ t('rate_limit') }}</h3><p data-modal-rate></p><h3>{{ t('human_data') }}</h3><ul data-modal-data></ul></div></div>
+<script>
+(function(){
+  const zone=document.querySelector('.drop-zone'); const input=document.getElementById('spot-photo-input'); const out=document.getElementById('selected-files');
+  if(!zone||!input||!out) return;
+  function show(files){ out.textContent = files && files.length ? Array.from(files).map(f=>f.name).join(', ') : 'JPEG, PNG or WebP. Maximum 10 files, 15 MB each.'; }
+  zone.addEventListener('dragover', e=>{e.preventDefault(); zone.classList.add('drag-over');});
+  zone.addEventListener('dragleave', ()=>zone.classList.remove('drag-over'));
+  zone.addEventListener('drop', e=>{e.preventDefault(); zone.classList.remove('drag-over'); input.files=e.dataTransfer.files; show(input.files);});
+  zone.addEventListener('keydown', e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault(); input.click();}});
+  input.addEventListener('change', ()=>show(input.files));
+})();
+</script>
 {% endblock %}

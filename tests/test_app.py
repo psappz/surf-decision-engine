@@ -1,4 +1,4 @@
-import os, tempfile
+import os, tempfile, re
 from datetime import datetime, timedelta, UTC, date
 import pytest
 from fastapi.testclient import TestClient
@@ -16,6 +16,9 @@ def client(monkeypatch):
 
 def login(c,u='Patrick',p='loliking'):
     return c.post('/login', data={'username':u,'password':p}, follow_redirects=False)
+
+def csrf_from(html):
+    return re.search(r'name="csrf_token" value="([^"]+)"', html).group(1)
 
 def test_success_failed_login_and_case_insensitive(client):
     login_page = client.get('/login')
@@ -114,11 +117,11 @@ def test_google_maps_url_spot_detail_and_all_routes(client):
     assert page.status_code==200
     assert 'https://www.google.com/maps/search/?api=1&query=' in page.text
     assert 'https://www.openstreetmap.org/?mlat=' in page.text
-    assert 'Live webcams' in page.text
-    assert 'Windy webcams' in page.text
-    assert 'Odeceixe live webcam' in page.text
-    assert 'https://beachcam.meo.pt/livecams/odeceixe' in page.text
-    assert 'https://www.windy.com/37.442/-8.798?37.442,-8.798,13' in page.text
+    assert 'Webcams' in page.text
+    assert 'No approved webcam link is currently available for this spot.' in page.text
+    assert 'Nearby webcam check' not in page.text
+    assert 'Windy webcams' not in page.text
+    assert 'https://www.windy.com/' not in page.text
     assert '<iframe' not in page.text
     assert 'Access sketch' not in page.text
     assert 'Access map pending verification' not in page.text
@@ -181,12 +184,13 @@ def test_admin_page_beach_spot_user_and_audit(client):
     # no public navigation link; admins remember /adm
     r=login(client,'Patrick','loliking'); client.cookies.set('ww_session', r.cookies['ww_session'])
     surf=client.get('/surf')
-    assert surf.status_code == 200 and 'href="/adm"' not in surf.text
+    assert surf.status_code == 200 and 'href="/adm"' in surf.text and 'href="/mod"' in surf.text
     adm=client.get('/adm')
     assert adm.status_code == 200
     assert 'WaveWatch admin' in adm.text and 'Add beach' in adm.text and 'Create new user' in adm.text
     assert 'Last 5 user logins' in adm.text and 'data-user-modal' in adm.text
-    beach=client.post('/adm/beaches', data={'name':'Praia Test Admin','latitude':'37.1','longitude':'-8.9','webcam_urls':'https://example.test/beachcam'}, files={'images':('beach.jpg',b'img','image/jpeg')}, follow_redirects=False)
+    token=csrf_from(adm.text)
+    beach=client.post('/adm/beaches', data={'name':'Praia Test Admin','latitude':'37.1','longitude':'-8.9','webcam_urls':'https://example.test/beachcam','csrf_token':token}, files={'images':('beach.jpg',b'img','image/jpeg')}, follow_redirects=False)
     assert beach.status_code == 303
     from app.database import SessionLocal
     from app.models import Beach, SurfSpot, User, LoginEvent, PageAccess, MediaAsset, WebcamLink
@@ -196,9 +200,9 @@ def test_admin_page_beach_spot_user_and_audit(client):
     assert db.query(MediaAsset).filter_by(entity_type='beach', entity_id=b.id).count() == 1
     assert db.query(WebcamLink).filter_by(entity_type='beach', entity_id=b.id).count() == 1
     db.close()
-    spot=client.post('/adm/spots', data={'beach_id':str(b.id),'name':'Admin Peak','latitude':'37.11','longitude':'-8.91','webcam_urls':'https://example.test/spotcam'}, files={'images':('spot.jpg',b'img','image/jpeg')}, follow_redirects=False)
+    spot=client.post('/adm/spots', data={'beach_id':str(b.id),'name':'Admin Peak','latitude':'37.11','longitude':'-8.91','webcam_urls':'https://example.test/spotcam','csrf_token':token}, files={'images':('spot.jpg',b'img','image/jpeg')}, follow_redirects=False)
     assert spot.status_code == 303
-    user_resp=client.post('/adm/users', data={'username':'NewSurfer','temp_password':'temp12345'}, follow_redirects=False)
+    user_resp=client.post('/adm/users', data={'username':'NewSurfer','temp_password':'temp12345','csrf_token':token}, follow_redirects=False)
     assert user_resp.status_code == 303
     db=SessionLocal()
     try:

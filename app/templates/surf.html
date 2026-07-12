@@ -14,6 +14,7 @@
   </div>
   <div class="header-actions">
     {{ prefs_form() }}
+    <nav>{% if user.role=='admin' %}<a class="button-link" href="/adm">Admin</a><a class="button-link" href="/mod">Moderation</a>{% elif user.role=='moderator' %}<a class="button-link" href="/mod">Moderation</a>{% endif %}</nav>
   </div>
 </header>
 <main>

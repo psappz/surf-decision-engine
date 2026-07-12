@@ -4,23 +4,73 @@ Production URL: `https://loli.restricted.invalid`.
 
 Production path: `/opt/wavewatch/app`.
 
-WaveWatch runs behind the shared `smartfinca-caddy` reverse proxy. Do not alter DNS and do not expose new public ports.
+WaveWatch runs behind the shared `smartfinca-caddy` reverse proxy. Do not alter DNS, do not alter unrelated Caddy routes, and do not expose new public ports.
 
-Deployment steps:
+## Standard deployment checklist
 
-1. Run local tests.
-2. Back up `/opt/wavewatch/app` and `wavewatch-db`.
-3. Sync application source excluding `.env`, `.venv`, `.git`, local DB files, caches, and upload data unless explicitly migrating uploads.
-4. Store Copernicus secrets outside the app repo at `/opt/wavewatch/secrets/copernicus.env` with mode `0600`.
-5. Rebuild with `docker compose -f docker-compose.prod.yml up -d --build`.
-6. Confirm `wavewatch-app`, `wavewatch-worker`, and `wavewatch-db` are running.
-7. Run `python -m app.tools.copernicus status` inside the app container.
-8. Install `/etc/cron.d/wavewatch-copernicus`.
-9. Smoke `https://loli.restricted.invalid/health`, login, `/surf`, and `/adm`.
+1. Create a feature branch.
+2. Inspect the current production database and containers.
+3. Back up `/opt/wavewatch/app` configuration/source.
+4. Back up the PostgreSQL database with `pg_dump`.
+5. Back up or verify the media volume.
+6. Run local tests.
+7. Sync application source excluding `.env`, `.venv`, `.git`, local DB files and caches.
+8. Rebuild with `docker compose -f docker-compose.prod.yml build` or `up -d --build`.
+9. Apply Alembic migrations safely.
+10. Confirm `wavewatch-app`, `wavewatch-worker`, and `wavewatch-db` are running.
+11. Run production smoke checks: `/health`, login, `/surf`, `/adm`, `/mod`, photo upload, webcam suggestion and approval.
+12. Preserve Copernicus jobs/provider integrations and `/etc/cron.d/wavewatch-copernicus`.
 
-Rollback:
+Copernicus secrets stay outside the app repo at `/opt/wavewatch/secrets/copernicus.env` with mode `0600`.
 
-- restore the latest app tarball backup into `/opt/wavewatch/app`;
-- restore the matching DB dump if schema/data rollback is required;
-- rebuild/restart with the previous compose files;
-- remove or disable `/etc/cron.d/wavewatch-copernicus` if rolling back Copernicus scheduling.
+## Media volume
+
+User-uploaded spot photos are stored outside the ephemeral app container filesystem.
+
+Production compose mounts:
+
+```text
+wavewatch_media:/data/media
+```
+
+The application environment sets:
+
+```text
+MEDIA_ROOT=/data/media
+MAX_UPLOAD_FILES=10
+MAX_UPLOAD_FILE_MB=15
+MAX_UPLOAD_TOTAL_MB=60
+```
+
+The `wavewatch_media` Docker volume must be included in backup coverage. Media paths stored in PostgreSQL are relative to `MEDIA_ROOT`; images are not stored in PostgreSQL.
+
+## Body-size configuration
+
+The local app Caddyfile and production reverse-proxy route should allow at least the configured total upload limit:
+
+```caddy
+request_body {
+  max_size 60MB
+}
+```
+
+Do not lower the proxy limit below `MAX_UPLOAD_TOTAL_MB`, or valid uploads will fail before reaching the application.
+
+## Migrations
+
+The spot administration/media feature adds:
+
+- `spot_webcams`
+- `webcam_suggestions`
+- `spot_photos`
+
+Existing users and surf spots are preserved. Deprecated generic webcam fields are left unused for compatibility; generic aggregator links are not migrated into approved webcam records.
+
+## Rollback
+
+- Restore the latest app tarball backup into `/opt/wavewatch/app`.
+- Restore the matching DB dump if schema/data rollback is required.
+- Restore compose/Caddy configuration backups.
+- Rebuild/restart with the previous compose files.
+- Preserve or restore `wavewatch_media` depending on whether uploaded photos must remain available after rollback.
+- Remove or disable `/etc/cron.d/wavewatch-copernicus` only when rolling back Copernicus scheduling itself.

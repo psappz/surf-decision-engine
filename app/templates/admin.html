@@ -12,8 +12,14 @@
   </section>
 
   <section class="shell-card admin-section">
+    <h2>Surf spot administration</h2>
+    <div class="tablewrap"><table><thead><tr><th>Spot</th><th>Beach</th><th>Zone</th><th>Slug</th><th>Active</th><th>Difficulty</th><th>Webcams</th><th>Photos</th><th>Last modified</th><th>Edit</th></tr></thead><tbody>{% for row in spot_rows %}{% set s=row.spot %}<tr><td>{{ s.name }}</td><td>{{ s.beach_name }}</td><td>{{ s.zone_name }}</td><td>{{ s.slug }}</td><td>{{ s.is_active_for_recommendations }}</td><td>{{ s.difficulty }}</td><td>{{ row.webcam_count }}</td><td>{{ row.photo_count }}</td><td>{{ s.updated_at }}</td><td><a class="button-link" href="/adm/spots/{{ s.id }}" target="_blank" rel="noopener noreferrer">Edit</a></td></tr>{% endfor %}</tbody></table></div>
+  </section>
+
+  <section class="shell-card admin-section">
     <h2>Add beach</h2>
     <form method="post" action="/adm/beaches" enctype="multipart/form-data" class="admin-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf }}">
       <label>Name<input required name="name" placeholder="Praia de Odeceixe"></label>
       <label>Latitude<input required name="latitude" type="number" step="0.000001"></label>
       <label>Longitude<input required name="longitude" type="number" step="0.000001"></label>
@@ -27,6 +33,7 @@
   <section class="shell-card admin-section">
     <h2>Add surfspot on beach</h2>
     <form method="post" action="/adm/spots" enctype="multipart/form-data" class="admin-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf }}">
       <label>Beach<select required name="beach_id">{% for b in beaches %}<option value="{{ b.id }}">{{ b.name }}</option>{% endfor %}</select></label>
       <label>Name<input required name="name" placeholder="North peak"></label>
       <label>Latitude<input required name="latitude" type="number" step="0.000001"></label>
@@ -41,6 +48,7 @@
   <section class="shell-card admin-section">
     <h2>Create new user</h2>
     <form method="post" action="/adm/users" class="admin-form compact-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf }}">
       <label>Username<input required name="username"></label>
       <label>Temp password<input required name="temp_password" type="text" autocomplete="new-password"></label>
       <button>Create user</button>
