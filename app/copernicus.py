@@ -30,6 +30,15 @@ CORE_VARIABLES = {'VHM0', 'VMDR', 'VTPK'}
 OPTIONAL_DECOMPOSITION_VARIABLES = set(REQUIRED_VARIABLE_MAP.values()) - CORE_VARIABLES
 DEFAULT_BOUNDS = (-9.15, -8.65, 36.95, 37.60)
 
+
+def redact(text: str | None) -> str:
+    safe = text or ''
+    for key in ('COPERNICUSMARINE_PASSWORD', 'COPERNICUSMARINE_SERVICE_PASSWORD', 'COPERNICUSMARINE_USERNAME', 'COPERNICUSMARINE_SERVICE_USERNAME'):
+        value = os.getenv(key)
+        if value:
+            safe = safe.replace(value, '[REDACTED]')
+    return safe
+
 # The exact Copernicus variable names must be filled from
 # `copernicusmarine describe` / product metadata. Do not use a Copernicus
 # Marine product id as the dataset id; toolbox `subset` expects a concrete
@@ -196,7 +205,10 @@ async def run_subset_download(
         env['COPERNICUSMARINE_SERVICE_PASSWORD'] = config.password
 
     def _run() -> None:
-        subprocess.run(command, check=True, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        result = subprocess.run(command, check=False, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        if result.returncode != 0:
+            detail = redact((result.stderr or result.stdout or '').strip())[:3000]
+            raise RuntimeError(f"copernicusmarine subset failed with exit {result.returncode}: {detail}")
 
     await asyncio.to_thread(_run)
     return output_file
