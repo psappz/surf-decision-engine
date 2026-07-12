@@ -76,7 +76,7 @@ def test_spot_scoring_safety_stale_confidence_tide():
 def test_provider_failure_fallback_and_daypart_recommendations(client):
     r=login(client,'Patrick','loliking'); client.cookies.set('ww_session', r.cookies['ww_session'])
     h=client.get('/health').json()
-    assert h['providers']['ipma-open-data']['status']=='degraded'
+    assert h['providers']['ipma-open-data']['status']=='disabled'
     assert h['providers']['open-meteo-marine']['status']=='healthy'
     assert '30-minute bundle limit' in h['providers']['open-meteo-marine']['rate_limit']
     p=client.get('/surf')

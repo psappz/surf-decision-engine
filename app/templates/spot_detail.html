@@ -39,7 +39,7 @@
       <dt>{{ t('relevant_tide') }}</dt><dd>{{ spot.preferred_tide_min }}–{{ spot.preferred_tide_max }} · {{ spot.tide_preference }}</dd>
       <dt>{{ t('hazards') }}</dt><dd>{{ spot.hazards }}</dd>
       <dt>{{ t('access_notes') }}</dt><dd>{{ spot.access_notes }}</dd>
-      <dt>{{ t('sources_used') }}</dt><dd>Open-Meteo-compatible marine/weather fixture, astronomical tide estimate; IPMA/Copernicus/buoy/webcam adapters are displayed when disabled/degraded.</dd>
+      <dt>{{ t('sources_used') }}</dt><dd>Open-Meteo-compatible marine/weather fixture, astronomical tide estimate, and Copernicus Marine when imported; IPMA/buoy/webcam adapters are displayed as disabled when not used.</dd>
       <dt>{{ t('last_update') }}</dt><dd>{% if latest %}{{ latest.fetched_at }}{% else %}No forecast{% endif %}</dd>
     </dl>
   </article>

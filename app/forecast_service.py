@@ -278,11 +278,11 @@ def provider_status(db):
             'human_data': _human_forecast_lines(latest_weather.values if latest_weather else {}, 'weather')
         },
         'ipma-open-data': {
-            'status':'degraded',
-            'reason':'Adapter boundary exists, but no precise stable spot-level IPMA marine feed is enabled for this prototype.',
+            'status':'disabled',
+            'reason':'Disabled by product decision: IPMA Open Data does not currently add useful spot-level accuracy for the Aljezur-focused app and would only act as broad fallback data.',
             'last_fetch':'not fetched',
-            'rate_limit':'Will use the same 30-minute bundle limit when enabled.',
-            'human_data':['No IPMA values were fetched. It is currently regional-corroboration only.']
+            'rate_limit':'No IPMA requests are performed. Reconsider only if the app expands to additional Portuguese regions or a useful spot-level feed is selected.',
+            'human_data':['IPMA is disabled. No IPMA values are fetched, stored, or used in scoring.']
         },
         'copernicus-marine': {
             'status': (latest_copernicus_job.status if latest_copernicus_job and latest_copernicus_job.status in ('queued','running') else (latest_copernicus_pub.status if latest_copernicus_pub else ('disabled' if copernicus_missing else 'waiting_for_publication'))),

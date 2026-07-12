@@ -7,7 +7,7 @@ Adapter: `OpenMeteoMarineProvider`. It requests hourly wave height/direction/per
 Adapter: `OpenMeteoWeatherProvider`. It requests wind speed/direction/gusts, air temperature, precipitation, cloud cover, and visibility.
 
 ## IPMA Open Data
-Adapter shell: `IPMAProvider`. It is marked degraded because no precise spot-level marine endpoint has been selected for this local prototype without relying on unstable scraping. It should be used as regional corroboration when implemented.
+Adapter shell: `IPMAProvider`. Status: disabled. Product decision: IPMA Open Data does not currently provide useful spot-level accuracy for this Aljezur-focused app; it would mostly act as broad fallback data if other APIs fail. Reconsider only if the app expands to more Portuguese regions or a specific useful spot-level IPMA feed is selected.
 
 ## Copernicus Marine
 Adapter: `CopernicusMarineProvider`. Product candidate: `GLOBAL_ANALYSISFORECAST_WAV_001_027`; selected forecast dataset id: `cmems_mod_glo_wav_anfc_0.083deg_PT3H-i`. The companion `cmems_mod_wav_anfc_0.083deg_static` dataset is static metadata/bathymetry-style support data, not the time-varying forecast feed for scoring. The provider is disabled until the Copernicus Marine Toolbox, non-interactive credentials, the verified forecast `COPERNICUSMARINE_DATASET_ID`, and a verified `COPERNICUSMARINE_VARIABLE_MAP_JSON` are configured. Do not fabricate dataset ids, variable names, or values. Implementation notes and the pending `describe` checklist are in `docs/copernicus-marine-integration.md`.

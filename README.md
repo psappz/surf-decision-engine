@@ -7,7 +7,7 @@ WaveWatch is a private FastAPI/Jinja2 surf recommendation prototype for advanced
 - PostgreSQL in Docker Compose; SQLAlchemy 2.x ORM. Tests can use SQLite for isolation.
 - Alembic migration `0001_initial` defines users, sessions, surf spots, provider fetches, marine/weather/tide forecasts, buoy observations, spot scores, and daily recommendations.
 - Caddy reverse-proxies local HTTP on `http://localhost:8080`.
-- Provider adapters normalize data behind `MarineForecastProvider`; Open-Meteo adapters are implemented, IPMA is a degraded regional corroboration shell, Copernicus/buoy/webcam integrations are disabled by default.
+- Provider adapters normalize data behind `MarineForecastProvider`; Open-Meteo adapters are implemented, IPMA is intentionally disabled, Copernicus scheduled ingestion is enabled when credentials/configuration are present, and buoy/webcam integrations are disabled by default.
 
 ## Local startup
 ```bash
@@ -37,7 +37,7 @@ Initial development credentials are defined by the build prompt and seeded with 
 Operational in the local prototype: internal Open-Meteo-compatible fixture data, astronomical tide estimate, and the adapter code for Open-Meteo Marine/Weather. Provider failures are represented as `healthy`, `degraded`, `unavailable`, or `disabled`.
 
 ## Free-source limitations
-IPMA is treated as regional corroboration until a precise, stable spot-level open marine feed is selected. Copernicus Marine is adapter-only unless credentials/configuration are available. Webcam confirmation is future licensed integration only; the app does not scrape or analyze third-party cameras.
+IPMA is intentionally disabled for the current Aljezur-focused app because it does not add useful spot-level accuracy beyond broad fallback coverage. Reconsider only if the app expands to more Portuguese regions or a specific useful spot-level IPMA feed is selected. Webcam confirmation is future licensed integration only; the app does not scrape or analyze third-party cameras.
 
 ## Recommendation formula
 See `docs/recommendation-model.md`. The score is rule-based, inspectable, and 0–100. It considers swell direction/height/period, wind direction/speed, tide, exposure, advanced-surfer fit, source agreement, freshness, and safety penalties.
