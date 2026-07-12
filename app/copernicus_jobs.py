@@ -299,6 +299,12 @@ async def ingest_job(db: Session, job: CopernicusIngestionJob) -> dict[str, Any]
     command = build_subset_command(cfg, bbox, start, end, temp_file)
     started = _now()
     env = os.environ.copy()
+    if cfg.username:
+        env['COPERNICUSMARINE_USERNAME'] = cfg.username
+        env['COPERNICUSMARINE_SERVICE_USERNAME'] = cfg.username
+    if cfg.password:
+        env['COPERNICUSMARINE_PASSWORD'] = cfg.password
+        env['COPERNICUSMARINE_SERVICE_PASSWORD'] = cfg.password
     result = await asyncio.to_thread(lambda: subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env, check=False))
     if result.returncode != 0:
         detail = (redact((result.stderr or result.stdout or '').strip()) or '')[:3000]
