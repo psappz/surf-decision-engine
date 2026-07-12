@@ -116,6 +116,7 @@ def test_i18n_language_and_proficiency_controls(client):
     page=client.get('/surf')
     assert 'Surfspot des Tages' in page.text
     assert 'Schwierigkeitspräferenz' in page.text
+    assert 'Wasser\xadtemperatur' in page.text
     assert 'Anfänger' in page.text
     assert 'Zweit- und drittbeste Alternativen' in page.text
     assert '<th>Surf Call</th>' in page.text
@@ -123,6 +124,15 @@ def test_i18n_language_and_proficiency_controls(client):
     pt=client.get('/surf')
     assert 'Melhor surf spot do dia' in pt.text
     assert 'Preferência de dificuldade' in pt.text
+
+
+def test_loliking_and_david_default_to_german(client):
+    for username,password in [('Loliking','loliwave'),('David','surferking')]:
+        client.cookies.clear()
+        r=login(client, username, password); client.cookies.set('ww_session', r.cookies['ww_session'])
+        page=client.get('/surf')
+        assert 'Surfspot des Tages' in page.text
+        assert '<option value="de" selected>Deutsch</option>' in page.text
 
 
 def test_proficiency_changes_recommendation_scores(client):

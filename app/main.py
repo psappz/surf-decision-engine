@@ -19,8 +19,13 @@ templates=Jinja2Templates(directory='app/templates')
 app.mount('/static', StaticFiles(directory='app/static'), name='static')
 scheduler=AsyncIOScheduler()
 
-def prefs(request: Request):
-    lang=normalize_language(request.cookies.get('ww_lang') or request.query_params.get('lang') or 'en')
+def default_language_for_user(user):
+    if user and user.username_lower in {'loliking','david'}:
+        return 'de'
+    return 'en'
+
+def prefs(request: Request, user=None):
+    lang=normalize_language(request.cookies.get('ww_lang') or request.query_params.get('lang') or default_language_for_user(user))
     proficiency=normalize_proficiency(request.cookies.get('ww_proficiency') or request.query_params.get('proficiency') or 'advanced')
     def t(key): return translate(lang,key)
     def prof_label(value): return label_for_proficiency(value, lang)
@@ -80,7 +85,7 @@ def logout(request:Request, csrf_token:str=Form(...), db:OrmSession=Depends(get_
     destroy_session(db,sid); resp=RedirectResponse('/login',status_code=303); clear_session_cookie(resp); return resp
 @app.get('/surf', response_class=HTMLResponse)
 def surf(request:Request, user=Depends(require_user), db:OrmSession=Depends(get_db)):
-    pref=prefs(request); date=datetime.now(ZoneInfo(settings.timezone)).date(); rankings=calculate_rankings(db, date, pref['proficiency'])
+    pref=prefs(request, user); date=datetime.now(ZoneInfo(settings.timezone)).date(); rankings=calculate_rankings(db, date, pref['proficiency'])
     by={part:(rows[0] if rows else None) for part, rows in rankings.items()}
     alternatives={part:rows[1:3] for part, rows in rankings.items()}
     spots=db.query(SurfSpot).order_by(SurfSpot.name).all(); latest=db.query(MarineForecast).order_by(desc(MarineForecast.fetched_at)).first()
@@ -91,7 +96,7 @@ def surf(request:Request, user=Depends(require_user), db:OrmSession=Depends(get_
     return templates.TemplateResponse('surf.html', {'request':request,'user':user,'date':date,'recommendations':by,'alternatives':alternatives,'spots':spots,'spot_summaries':spot_summaries,'csrf':request.state.csrf,'provider_status':provider_status(db),'newest_data':latest.fetched_at if latest else None, **pref})
 @app.get('/surf/spots/{slug}', response_class=HTMLResponse)
 def spot_detail(slug:str, request:Request, user=Depends(require_user), db:OrmSession=Depends(get_db)):
-    pref=prefs(request); spot=db.query(SurfSpot).filter(SurfSpot.slug==slug).first()
+    pref=prefs(request, user); spot=db.query(SurfSpot).filter(SurfSpot.slug==slug).first()
     if not spot: raise HTTPException(404)
     date=datetime.now(ZoneInfo(settings.timezone)).date(); by=spot_daypart_scores(db, spot, date, pref['proficiency'])
     latest=db.query(MarineForecast).filter(MarineForecast.spot_id==spot.id).order_by(desc(MarineForecast.fetched_at)).first()
