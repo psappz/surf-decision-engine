@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session as OrmSession
 from sqlalchemy import desc
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from .database import get_db, SessionLocal, engine
-from .models import Base, User, SurfSpot, SpotScore, DailyRecommendation, MarineForecast, Session as DbSession, Beach, LoginEvent, PageAccess, MediaAsset, WebcamLink, SpotWebcam, WebcamSuggestion, SpotPhoto
+from .models import Base, User, SurfSpot, SpotScore, DailyRecommendation, MarineForecast, Session as DbSession, Beach, LoginEvent, PageAccess, MediaAsset, WebcamLink, SpotWebcam, WebcamSuggestion, SpotPhoto, UserFavoriteSpot
 from .security import verify_password, hash_password, rate_limited, record_failure, clear_failures, create_session, get_session, destroy_session, set_session_cookie, clear_session_cookie
 from .seed import seed
 from .forecast_service import ensure_seed_forecasts, calculate_recommendations, provider_status, calculate_rankings, spot_daypart_scores
@@ -113,6 +113,17 @@ def require_moderator(request:Request, user=Depends(require_user)):
     if user.role not in {'admin','moderator'}: raise HTTPException(404)
     return user
 
+MAX_FAVORITE_SPOTS = 5
+
+
+def favorite_spot_ids(db: OrmSession, user_id: int) -> set[int]:
+    return {row.spot_id for row in db.query(UserFavoriteSpot).filter_by(user_id=user_id).all()}
+
+
+def favorite_context(db: OrmSession, user_id: int) -> dict:
+    ids=favorite_spot_ids(db, user_id)
+    return {'favorite_spot_ids':ids,'favorite_count':len(ids),'favorite_limit':MAX_FAVORITE_SPOTS,'favorite_limit_reached':len(ids) >= MAX_FAVORITE_SPOTS}
+
 SPOT_EDIT_FIELDS = ['code','slug','name','beach_name','zone_name','latitude','longitude','description','spot_type','difficulty','is_active_for_recommendations','preferred_swell_direction_min','preferred_swell_direction_max','acceptable_swell_direction_min','acceptable_swell_direction_max','preferred_swell_height_min','preferred_swell_height_max','maximum_safe_swell_height_for_profile','preferred_period_min','preferred_period_max','preferred_wind_direction_min','preferred_wind_direction_max','preferred_tide_min','preferred_tide_max','tide_preference','exposure_factor','shelter_factor','hazards','access_notes','base_confidence','external_navigation_url','access_map_id','access_map_asset','access_map_status','seed_source_note']
 FLOAT_FIELDS = {'latitude','longitude','preferred_swell_direction_min','preferred_swell_direction_max','acceptable_swell_direction_min','acceptable_swell_direction_max','preferred_swell_height_min','preferred_swell_height_max','maximum_safe_swell_height_for_profile','preferred_period_min','preferred_period_max','preferred_wind_direction_min','preferred_wind_direction_max','preferred_tide_min','preferred_tide_max','exposure_factor','shelter_factor','base_confidence'}
 TEXT_FIELDS = set(SPOT_EDIT_FIELDS) - FLOAT_FIELDS - {'is_active_for_recommendations'}
@@ -192,7 +203,7 @@ def surf(request:Request, user=Depends(require_user), db:OrmSession=Depends(get_
     for s in spots:
         candidates=[r for rows in rankings.values() for r in rows if r.spot_id==s.id]
         spot_summaries[s.id]=max(candidates, key=lambda r:r.score) if candidates else None
-    return templates.TemplateResponse('surf.html', {'request':request,'user':user,'date':date,'recommendations':by,'alternatives':alternatives,'spots':spots,'spot_summaries':spot_summaries,'csrf':request.state.csrf,'provider_status':provider_status(db),'newest_data':latest.fetched_at if latest else None, **pref})
+    return templates.TemplateResponse('surf.html', {'request':request,'user':user,'date':date,'recommendations':by,'alternatives':alternatives,'spots':spots,'spot_summaries':spot_summaries,'csrf':request.state.csrf,'provider_status':provider_status(db),'newest_data':latest.fetched_at if latest else None, **favorite_context(db, user.id), **pref})
 @app.get('/surf/spots/{slug}', response_class=HTMLResponse)
 def spot_detail(slug:str, request:Request, user=Depends(require_user), db:OrmSession=Depends(get_db)):
     pref=prefs(request, user); spot=db.query(SurfSpot).filter(SurfSpot.slug==slug).first()
@@ -201,7 +212,29 @@ def spot_detail(slug:str, request:Request, user=Depends(require_user), db:OrmSes
     latest=db.query(MarineForecast).filter(MarineForecast.spot_id==spot.id).order_by(desc(MarineForecast.fetched_at)).first()
     webcams=db.query(SpotWebcam).filter_by(spot_id=spot.id, is_active=True).order_by(SpotWebcam.sort_order, SpotWebcam.id).all()
     photos=db.query(SpotPhoto).filter_by(spot_id=spot.id, status='active').order_by(desc(SpotPhoto.created_at)).all()
-    return templates.TemplateResponse('spot_detail.html', {'request':request,'user':user,'spot':spot,'scores':by,'csrf':request.state.csrf,'provider_status':provider_status(db),'latest':latest,'osm_url':osm_link(spot.latitude, spot.longitude),'approved_webcams':webcams,'photos':photos, **pref})
+    is_favorite=db.query(UserFavoriteSpot).filter_by(user_id=user.id, spot_id=spot.id).first() is not None
+    return templates.TemplateResponse('spot_detail.html', {'request':request,'user':user,'spot':spot,'scores':by,'csrf':request.state.csrf,'provider_status':provider_status(db),'latest':latest,'osm_url':osm_link(spot.latitude, spot.longitude),'approved_webcams':webcams,'photos':photos,'is_favorite':is_favorite, **favorite_context(db, user.id), **pref})
+
+
+@app.post('/surf/spots/{slug}/favorite')
+def toggle_favorite_spot(slug:str, request:Request, csrf_token:str=Form(...), favorite:str|None=Form(None), next:str=Form('/surf'), user=Depends(require_user), db:OrmSession=Depends(get_db)):
+    csrf_or_403(request, csrf_token)
+    spot=db.query(SurfSpot).filter_by(slug=slug).first()
+    if not spot: raise HTTPException(404)
+    existing=db.query(UserFavoriteSpot).filter_by(user_id=user.id, spot_id=spot.id).first()
+    wants_favorite = favorite == 'on'
+    if wants_favorite and not existing:
+        count=db.query(UserFavoriteSpot).filter_by(user_id=user.id).count()
+        if count >= MAX_FAVORITE_SPOTS:
+            target=next if next.startswith('/') and not next.startswith('//') else '/surf'
+            sep='&' if '?' in target else '?'
+            return RedirectResponse(f'{target}{sep}favorite_limit=1', status_code=303)
+        db.add(UserFavoriteSpot(user_id=user.id, spot_id=spot.id, created_at=datetime.now(UTC)))
+        db.commit()
+    elif not wants_favorite and existing:
+        db.delete(existing); db.commit()
+    target=next if next.startswith('/') and not next.startswith('//') else '/surf'
+    return RedirectResponse(target, status_code=303)
 
 
 def admin_context(db: OrmSession):

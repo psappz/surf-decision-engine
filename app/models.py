@@ -68,6 +68,14 @@ class WebcamSuggestion(Base):
     reviewed_at:Mapped[datetime|None]=mapped_column(DateTime(timezone=True),nullable=True)
     approved_webcam_id:Mapped[int|None]=mapped_column(ForeignKey('spot_webcams.id'),nullable=True)
     spot=relationship('SurfSpot'); submitted_by=relationship('User', foreign_keys=[submitted_by_user_id]); reviewed_by=relationship('User', foreign_keys=[reviewed_by_user_id]); approved_webcam=relationship('SpotWebcam')
+class UserFavoriteSpot(Base):
+    __tablename__='user_favorite_spots'
+    __table_args__=(UniqueConstraint('user_id','spot_id',name='uq_user_favorite_spot'),)
+    id:Mapped[int]=mapped_column(primary_key=True)
+    user_id:Mapped[int]=mapped_column(ForeignKey('users.id'),index=True)
+    spot_id:Mapped[int]=mapped_column(ForeignKey('surf_spots.id'),index=True)
+    created_at:Mapped[datetime]=mapped_column(DateTime(timezone=True),index=True)
+    user=relationship('User'); spot=relationship('SurfSpot')
 class SpotPhoto(Base):
     __tablename__='spot_photos'
     id:Mapped[int]=mapped_column(primary_key=True)
