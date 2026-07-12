@@ -18,6 +18,14 @@ def login(c,u='Patrick',p='loliking'):
     return c.post('/login', data={'username':u,'password':p}, follow_redirects=False)
 
 def test_success_failed_login_and_case_insensitive(client):
+    login_page = client.get('/login')
+    assert login_page.status_code == 200
+    assert 'wavewatch-logo' not in login_page.text
+    assert 'top-preferences' not in login_page.text
+    assert 'name="lang"' not in login_page.text
+    assert 'name="proficiency"' not in login_page.text
+    assert 'WaveWatch' not in login_page.text
+    assert 'Paddle' not in login_page.text
     bad=client.post('/login', data={'username':'Patrick','password':'wrong'})
     assert bad.status_code==401 and 'Invalid username or password' in bad.text
     ok=login(client,'patrick','loliking')

@@ -59,18 +59,18 @@ async def startup():
 @app.get('/', response_class=HTMLResponse)
 def home(request:Request, user=Depends(current_user)):
     if user: return RedirectResponse('/surf', status_code=303)
-    return templates.TemplateResponse('login.html', {'request':request,'csrf':'anonymous','error':None, **prefs(request)})
+    return templates.TemplateResponse('login.html', {'request':request,'csrf':'anonymous','error':None,'page_title':'Login', **prefs(request)})
 @app.get('/login', response_class=HTMLResponse)
 def login_form(request:Request, user=Depends(current_user)):
     if user: return RedirectResponse('/surf', status_code=303)
-    return templates.TemplateResponse('login.html', {'request':request,'csrf':'anonymous','error':None, **prefs(request)})
+    return templates.TemplateResponse('login.html', {'request':request,'csrf':'anonymous','error':None,'page_title':'Login', **prefs(request)})
 @app.post('/login')
 def login(request:Request, username:str=Form(...), password:str=Form(...), db:OrmSession=Depends(get_db)):
     key=(request.client.host if request.client else 'local')+':'+username.lower()
-    if rate_limited(key): return templates.TemplateResponse('login.html', {'request':request,'csrf':'anonymous','error':translate(prefs(request)['lang'],'invalid_credentials'), **prefs(request)}, status_code=429)
+    if rate_limited(key): return templates.TemplateResponse('login.html', {'request':request,'csrf':'anonymous','error':translate(prefs(request)['lang'],'invalid_credentials'),'page_title':'Login', **prefs(request)}, status_code=429)
     user=db.query(User).filter(User.username_lower==username.lower()).first()
     if not user or not verify_password(password,user.password_hash):
-        record_failure(key); return templates.TemplateResponse('login.html', {'request':request,'csrf':'anonymous','error':translate(prefs(request)['lang'],'invalid_credentials'), **prefs(request)}, status_code=401)
+        record_failure(key); return templates.TemplateResponse('login.html', {'request':request,'csrf':'anonymous','error':translate(prefs(request)['lang'],'invalid_credentials'),'page_title':'Login', **prefs(request)}, status_code=401)
     old=request.cookies.get('ww_session'); destroy_session(db, old); s=create_session(db,user,old); clear_failures(key)
     resp=RedirectResponse('/surf',status_code=303); set_session_cookie(resp,s.id); return resp
 @app.post('/logout')

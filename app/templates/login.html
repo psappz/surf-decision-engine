@@ -1,23 +1,13 @@
 {% extends "base.html" %}
 {% block body %}
-<div class="top-preferences login-prefs">
-  <form method="get" action="/preferences" class="preference-form">
-    <input type="hidden" name="next" value="{{ request.url.path }}">
-    <label>{{ t('language') }}<select name="lang">{% for code,label in languages.items() %}<option value="{{ code }}" {% if code==lang %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></label>
-    <label>{{ t('proficiency') }}<select name="proficiency">{% for p in proficiencies %}<option value="{{ p }}" {% if p==proficiency %}selected{% endif %}>{{ prof_label(p) }}</option>{% endfor %}</select></label>
-    <button>{{ t('save_preferences') }}</button>
-  </form>
-</div>
-<main class="login shell-card">
-  <img class="login-logo" src="/static/wavewatch-logo.png" alt="WaveWatch logo">
-  <h1>WaveWatch</h1>
-  <p class="tagline">{{ t('app_tagline') }}</p>
+<main class="login shell-card private-login">
+  <h1>Login</h1>
   {% if error %}<p class="error">{{ error }}</p>{% endif %}
   <form method="post" action="/login" class="form-stack">
     <input type="hidden" name="csrf_token" value="{{ csrf }}">
     <label>{{ t('username') }}<input name="username" autocomplete="username" required autofocus></label>
     <label>{{ t('password') }}<input name="password" type="password" autocomplete="current-password" required></label>
-    <button type="submit">{{ t('login_button') }}</button>
+    <button type="submit">Login</button>
   </form>
 </main>
 {% endblock %}

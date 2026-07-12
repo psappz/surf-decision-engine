@@ -115,3 +115,10 @@ a{color:#005f91;font-weight:850}.error{background:#fff0f0;color:#9f1239;border:1
 .modal{position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(2,11,18,.62);z-index:20;padding:1rem}.modal[aria-hidden="false"]{display:flex}.modal-card{width:min(680px,96vw);max-height:86vh;overflow:auto;background:#f8fdff;border:1px solid rgba(55,196,236,.34);border-radius:26px;padding:1.2rem;box-shadow:0 24px 90px rgba(0,0,0,.45)}.modal-close{float:left;margin:0 .6rem .4rem 0;width:2.35rem;height:2.35rem;padding:0;border-radius:999px}.modal ul{padding-left:1.3rem}.spot-hero{padding:1.2rem}
 @media(max-width:880px){.top{align-items:stretch;flex-direction:column}.brand-lockup{align-items:flex-start}.site-logo{width:min(78vw,360px);max-width:78vw}.header-actions{justify-content:flex-start}.preference-form{width:100%}.preference-form label{min-width:100%}.preference-form select,.preference-form button{width:100%}.top-preferences{justify-content:stretch}.login-prefs .preference-form{width:100%}.metrics,.grid{grid-template-columns:1fr}.surf-hero{min-height:auto}.surf-hero h1{font-size:2.6rem}}
 @media(max-width:520px){main,.top{padding:.75rem}.site-logo{width:100%}.card,.intro-panel,.provider-panel,section{padding:.9rem;border-radius:20px}.login{margin:3vh .75rem}.login-logo{width:100%}h1{font-size:2.25rem}}
+
+/* Private login: intentionally neutral, no WaveWatch branding or surf context before authentication. */
+body:has(.private-login){background:#f3f4f6;color:#111827}
+body:has(.private-login):before,body:has(.private-login):after{display:none}
+.private-login{max-width:28rem;background:#fff;border:1px solid #e5e7eb;box-shadow:0 18px 50px rgba(17,24,39,.10);backdrop-filter:none;text-align:left}
+.private-login h1{text-shadow:none;letter-spacing:0;font-size:1.8rem;color:#111827;text-align:left;margin-bottom:1rem}
+.private-login label{color:#1f2937}.private-login input{border-color:#d1d5db;border-radius:10px}.private-login button{background:#111827;box-shadow:none;border-radius:10px}.private-login button:hover{filter:none;background:#000}
