@@ -8,15 +8,13 @@
 </form>
 {%- endmacro %}
 {% block body %}
-<header class="top surf-hero compact">
+<header class="top app-header compact">
   <div class="brand-lockup">
-    <img class="site-logo" src="/static/wavewatch-logo.png" alt="WaveWatch logo">
-    <div><p class="tagline">{{ user.username }} · {{ user.role }} · {{ t('spot_check') }}</p></div>
+    <img class="site-logo" src="/static/onda-experto24-logo.png" alt="Onda Experto 24 logo">
   </div>
   <div class="header-actions">
     {{ prefs_form() }}
     <nav><a class="button-link" href="/surf">{{ t('back_to_lineup') }}</a></nav>
-    <form method="post" action="/logout"><input type="hidden" name="csrf_token" value="{{ csrf }}"><button>{{ t('logout') }}</button></form>
   </div>
 </header>
 <main>
@@ -79,5 +77,6 @@
     {% endfor %}
   </div></section>
 </main>
+<footer class="site-footer"><a class="logout-link" href="/logout">logout</a></footer>
 <div class="modal" data-provider-modal aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="provider-modal-title"><div class="modal-card"><button class="modal-close" aria-label="{{ t('close') }}">×</button><h2 id="provider-modal-title" data-modal-title>Provider</h2><p><span data-modal-status class="status-pill"></span></p><h3>{{ t('why_status') }}</h3><p data-modal-reason></p><h3>{{ t('last_bundle') }}</h3><p data-modal-fetched></p><h3>{{ t('rate_limit') }}</h3><p data-modal-rate></p><h3>{{ t('human_data') }}</h3><ul data-modal-data></ul></div></div>
 {% endblock %}

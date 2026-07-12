@@ -25,6 +25,9 @@ def test_success_failed_login_and_case_insensitive(client):
     assert 'name="lang"' not in login_page.text
     assert 'name="proficiency"' not in login_page.text
     assert 'WaveWatch' not in login_page.text
+    assert 'Onda' not in login_page.text
+    assert 'Experto' not in login_page.text
+    assert 'onda-experto24-logo' not in login_page.text
     assert 'Paddle' not in login_page.text
     bad=client.post('/login', data={'username':'Patrick','password':'wrong'})
     assert bad.status_code==401 and 'Invalid username or password' in bad.text
@@ -36,10 +39,11 @@ def test_session_protection_redirect_logout_role_persistence(client):
     assert client.get('/surf', follow_redirects=False).status_code==303
     r=login(client,'Loliking','loliwave'); client.cookies.set('ww_session', r.cookies['ww_session'])
     page=client.get('/surf')
-    assert 'Loliking' in page.text and 'moderator' in page.text
-    import re
-    token=re.search('name="csrf_token" value="([^"]+)"', page.text).group(1)
-    out=client.post('/logout', data={'csrf_token':token}, follow_redirects=False)
+    assert 'Loliking' not in page.text and 'moderator' not in page.text
+    assert 'onda-experto24-logo.png' in page.text
+    assert 'action="/logout"' not in page.text
+    assert '>logout</a>' in page.text
+    out=client.get('/logout', follow_redirects=False)
     assert out.status_code==303
     assert client.get('/surf', follow_redirects=False).status_code==303
 
@@ -99,6 +103,10 @@ def test_google_maps_url_spot_detail_and_all_routes(client):
     page=client.get('/surf/spots/odeceixe')
     assert page.status_code==200
     assert 'https://www.google.com/maps/search/?api=1&query=' in page.text
+    assert 'onda-experto24-logo.png' in page.text
+    assert 'wavewatch-logo.png' not in page.text
+    assert 'action="/logout"' not in page.text
+    assert '>logout</a>' in page.text
     assert 'spot-media' not in page.text
     assert 'spot-media-unavailable' not in page.text
     assert '/static/spot-media/odeceixe-beach.svg' not in page.text
@@ -106,6 +114,14 @@ def test_google_maps_url_spot_detail_and_all_routes(client):
     assert 'Strandbild nicht verfügbar' not in page.text
     assert 'Landkartenausschnitt nicht verfügbar' not in page.text
     assert 'Odeceixe' in page.text
+
+def test_authenticated_header_uses_white_background_and_no_hero_image():
+    css = open('app/static/style.css', encoding='utf-8').read()
+    assert '.app-header' in css
+    assert "background:#fff" in css
+    assert "wavewatch-hero-logo" not in css
+    assert "image-set(" not in css
+
 
 def test_no_permanent_hardcoded_recommendation(client):
     from app.database import SessionLocal

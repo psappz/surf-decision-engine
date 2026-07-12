@@ -79,6 +79,10 @@ def login(request:Request, username:str=Form(...), password:str=Form(...), db:Or
         record_failure(key); return templates.TemplateResponse('login.html', {'request':request,'csrf':'anonymous','error':translate(prefs(request)['lang'],'invalid_credentials'),'page_title':'Login', **prefs(request)}, status_code=401)
     old=request.cookies.get('ww_session'); destroy_session(db, old); s=create_session(db,user,old); clear_failures(key)
     resp=RedirectResponse('/surf',status_code=303); set_session_cookie(resp,s.id); return resp
+@app.get('/logout')
+def logout_link(request:Request, db:OrmSession=Depends(get_db)):
+    sid=request.cookies.get('ww_session'); destroy_session(db,sid)
+    resp=RedirectResponse('/login',status_code=303); clear_session_cookie(resp); return resp
 @app.post('/logout')
 def logout(request:Request, csrf_token:str=Form(...), db:OrmSession=Depends(get_db)):
     sid=request.cookies.get('ww_session'); s=get_session(db,sid)

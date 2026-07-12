@@ -37,9 +37,16 @@ def generate() -> int:
         warnings = []
         if not fixture.exists():
             warnings.append('No local OpenStreetMap raw/vector fixture found; SVG was not generated to avoid inventing roads, routes, parking, or access restrictions.')
+            meta_path = GENERATED_DIR / f'{map_id}.json'
+            generated_at = now
+            if meta_path.exists():
+                try:
+                    generated_at = json.loads(meta_path.read_text(encoding='utf-8')).get('generated_at') or now
+                except json.JSONDecodeError:
+                    generated_at = now
             meta = {
                 'map_id': map_id,
-                'generated_at': now,
+                'generated_at': generated_at,
                 'osm_data_timestamp': None,
                 'route_provider': None,
                 'source_coordinates': {},
