@@ -1,4 +1,5 @@
 import os, re, tempfile
+from types import SimpleNamespace
 from fastapi.testclient import TestClient
 import pytest
 
@@ -36,6 +37,33 @@ def surf_order(html):
         if slug not in seen:
             seen.append(slug)
     return seen
+
+def row(spot_id, score):
+    return SimpleNamespace(spot_id=spot_id, score=score, summary=SimpleNamespace())
+
+def test_favourite_rating_bonus_applies_only_to_go_scores():
+    from app.forecast_service import apply_favorite_score_bonus
+    go_fav=row(1, 70)
+    maybe_fav=row(2, 69.9)
+    nonfav=row(3, 82)
+    adjusted=apply_favorite_score_bonus({'morning':[nonfav, maybe_fav, go_fav]}, {1, 2})['morning']
+    by_id={r.spot_id:r for r in adjusted}
+    assert by_id[1].score == 75
+    assert by_id[1].favorite_bonus == 5
+    assert by_id[1].summary.base_score == 70
+    assert by_id[2].score == 69.9
+    assert by_id[2].favorite_bonus == 0
+    assert by_id[3].score == 82
+    assert by_id[3].favorite_bonus == 0
+
+def test_favourite_rating_bonus_is_capped_and_can_change_ranking():
+    from app.forecast_service import apply_favorite_score_bonus
+    favorite=row(1, 96)
+    nonfav=row(2, 99)
+    adjusted=apply_favorite_score_bonus({'midday':[nonfav, favorite]}, {1})['midday']
+    assert adjusted[0].spot_id == 1
+    assert adjusted[0].score == 100
+    assert adjusted[0].base_score == 96
 
 def test_favourites_move_to_top_of_surf_list(client):
     login(client)

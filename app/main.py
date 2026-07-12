@@ -13,7 +13,7 @@ from .database import get_db, SessionLocal, engine
 from .models import Base, User, SurfSpot, SpotScore, DailyRecommendation, MarineForecast, Session as DbSession, Beach, LoginEvent, PageAccess, MediaAsset, WebcamLink, SpotWebcam, WebcamSuggestion, SpotPhoto, UserFavoriteSpot
 from .security import verify_password, hash_password, rate_limited, record_failure, clear_failures, create_session, get_session, destroy_session, set_session_cookie, clear_session_cookie
 from .seed import seed
-from .forecast_service import ensure_seed_forecasts, calculate_recommendations, provider_status, calculate_rankings, spot_daypart_scores
+from .forecast_service import ensure_seed_forecasts, calculate_recommendations, provider_status, calculate_rankings, apply_favorite_score_bonus
 from .access_maps import osm_link
 from .config import settings
 from .i18n import normalize_language, normalize_proficiency, translate, SUPPORTED_LANGUAGES, SUPPORTED_PROFICIENCIES, label_for_proficiency, surf_call, classification_label
@@ -196,10 +196,11 @@ def logout(request:Request, csrf_token:str=Form(...), db:OrmSession=Depends(get_
 @app.get('/surf', response_class=HTMLResponse)
 def surf(request:Request, user=Depends(require_user), db:OrmSession=Depends(get_db)):
     pref=prefs(request, user); date=datetime.now(ZoneInfo(settings.timezone)).date(); rankings=calculate_rankings(db, date, pref['proficiency'])
+    fav_ctx=favorite_context(db, user.id)
+    rankings=apply_favorite_score_bonus(rankings, fav_ctx['favorite_spot_ids'])
     by={part:(rows[0] if rows else None) for part, rows in rankings.items()}
     alternatives={part:rows[1:3] for part, rows in rankings.items()}
     spots=db.query(SurfSpot).order_by(SurfSpot.name).all(); latest=db.query(MarineForecast).order_by(desc(MarineForecast.fetched_at)).first()
-    fav_ctx=favorite_context(db, user.id)
     spots=sorted(spots, key=lambda s: (s.id not in fav_ctx['favorite_spot_ids'], s.name.lower()))
     spot_summaries={}
     for s in spots:
@@ -210,7 +211,8 @@ def surf(request:Request, user=Depends(require_user), db:OrmSession=Depends(get_
 def spot_detail(slug:str, request:Request, user=Depends(require_user), db:OrmSession=Depends(get_db)):
     pref=prefs(request, user); spot=db.query(SurfSpot).filter(SurfSpot.slug==slug).first()
     if not spot: raise HTTPException(404)
-    date=datetime.now(ZoneInfo(settings.timezone)).date(); by=spot_daypart_scores(db, spot, date, pref['proficiency'])
+    date=datetime.now(ZoneInfo(settings.timezone)).date(); fav_ctx=favorite_context(db, user.id); by=apply_favorite_score_bonus(calculate_rankings(db, date, pref['proficiency']), fav_ctx['favorite_spot_ids'])
+    by={part: next((r for r in rows if r.spot_id == spot.id), None) for part, rows in by.items()}
     latest=db.query(MarineForecast).filter(MarineForecast.spot_id==spot.id).order_by(desc(MarineForecast.fetched_at)).first()
     webcams=db.query(SpotWebcam).filter_by(spot_id=spot.id, is_active=True).order_by(SpotWebcam.sort_order, SpotWebcam.id).all()
     photos=db.query(SpotPhoto).filter_by(spot_id=spot.id, status='active').order_by(desc(SpotPhoto.created_at)).all()

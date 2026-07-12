@@ -243,6 +243,28 @@ def calculate_rankings(db, score_date=None, profile='advanced'):
     return out
 
 
+def apply_favorite_score_bonus(rankings, favorite_spot_ids: set[int], bonus: float = 5):
+    """Give favourite spots a small score boost only when their base surf call is already Go."""
+    favorite_spot_ids = set(favorite_spot_ids or set())
+    adjusted = {}
+    for daypart, rows in rankings.items():
+        day_rows = list(rows)
+        for row in day_rows:
+            base_score = row.score
+            row.favorite_bonus = 0
+            row.base_score = base_score
+            if row.spot_id in favorite_spot_ids and base_score >= 70:
+                row.favorite_bonus = bonus
+                row.score = min(100, round(base_score + bonus, 1))
+                try:
+                    row.summary.favorite_bonus = bonus
+                    row.summary.base_score = base_score
+                except AttributeError:
+                    pass
+        adjusted[daypart] = sorted(day_rows, key=lambda r: r.score, reverse=True)
+    return adjusted
+
+
 def spot_daypart_scores(db, spot, score_date=None, profile='advanced'):
     rankings=calculate_rankings(db, score_date, profile)
     return {part: next((r for r in rows if r.spot_id == spot.id), None) for part, rows in rankings.items()}
