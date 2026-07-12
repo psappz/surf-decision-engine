@@ -169,7 +169,7 @@ def build_subset_command(
         '--end-datetime', end.astimezone(UTC).isoformat().replace('+00:00', 'Z'),
         '--output-directory', str(output_file.parent),
         '--output-filename', output_file.name,
-        '--force-download',
+        '--overwrite',
     ]
     for normalized in NORMALIZED_FIELDS:
         variable = config.variable_map.get(normalized)
@@ -190,8 +190,10 @@ async def run_subset_download(
     env = os.environ.copy()
     if config.username:
         env['COPERNICUSMARINE_USERNAME'] = config.username
+        env['COPERNICUSMARINE_SERVICE_USERNAME'] = config.username
     if config.password:
         env['COPERNICUSMARINE_PASSWORD'] = config.password
+        env['COPERNICUSMARINE_SERVICE_PASSWORD'] = config.password
 
     def _run() -> None:
         subprocess.run(command, check=True, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
