@@ -1,0 +1,29 @@
+[project]
+name = "wavewatch"
+version = "0.1.0"
+description = "Private local surf recommendation prototype for Aljezur"
+requires-python = ">=3.11"
+dependencies = [
+  "fastapi==0.115.6",
+  "uvicorn[standard]==0.34.0",
+  "jinja2==3.1.5",
+  "sqlalchemy==2.0.36",
+  "alembic==1.14.0",
+  "psycopg[binary]==3.2.3",
+  "httpx==0.28.1",
+  "apscheduler==3.11.0",
+  "passlib[bcrypt]==1.7.4",
+  "bcrypt==4.0.1",
+  "python-multipart==0.0.20",
+]
+
+[project.optional-dependencies]
+test = ["pytest==8.3.4", "pytest-asyncio==0.25.0", "beautifulsoup4==4.12.3"]
+
+[tool.setuptools.packages.find]
+include = ["app*"]
+exclude = ["alembic*", "tests*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
