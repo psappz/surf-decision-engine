@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="300" height="220" viewBox="0 0 300 220" role="img" aria-label="Schematischer Landkartenausschnitt Monte Clérigo">
+  <rect width="300" height="220" rx="18" fill="#e8f4df"/>
+  <path d="M0 0 H74 C58 24 71 51 52 76 C34 101 57 128 39 154 C24 176 38 198 25 220 H0 Z" fill="#7dd3fc"/>
+  <path d="M72 0 C55 25 70 49 51 76 C35 100 59 128 39 154 C26 174 38 198 25 220" fill="none" stroke="#f8fafc" stroke-width="8" opacity=".95"/>
+  <path d="M214 -10 C205 18 221 39 210 65 C198 94 222 117 211 145 C202 169 211 194 202 230" fill="none" stroke="#f8fafc" stroke-width="15" stroke-linecap="round"/>
+  <path d="M214 -10 C205 18 221 39 210 65 C198 94 222 117 211 145 C202 169 211 194 202 230" fill="none" stroke="#f59e0b" stroke-width="6" stroke-linecap="round"/>
+  <path d="M215.0 81.3 C176 63.3, 135 99.3, 76.7 87.3" fill="none" stroke="#ffffff" stroke-width="10" stroke-linecap="round"/>
+  <path d="M215.0 81.3 C176 63.3, 135 99.3, 76.7 87.3" fill="none" stroke="#64748b" stroke-width="4" stroke-linecap="round" stroke-dasharray="10 5"/>
+  <circle cx="76.7" cy="87.3" r="8" fill="#dc2626" stroke="#fff" stroke-width="3"/>
+  <text x="16" y="22" font-family="Inter, Arial, sans-serif" font-size="14" font-weight="800" fill="#14532d">Monte Clérigo</text>
+  <text x="172" y="24" font-family="Inter, Arial, sans-serif" font-size="10" font-weight="700" fill="#78350f">N120 / Aljezur road</text>
+  <text x="128" y="73.3" font-family="Inter, Arial, sans-serif" font-size="9" fill="#334155">Zufahrt</text>
+  <text x="16" y="198" font-family="Inter, Arial, sans-serif" font-size="9" fill="#334155">Schematischer Ausschnitt aus Koordinaten; Straße/Zufahrt vor Ort prüfen.</text>
+  <text x="16" y="211" font-family="Inter, Arial, sans-serif" font-size="9" fill="#334155">Lat 37.3398, Lon -8.8520</text>
+</svg>

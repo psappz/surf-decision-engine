@@ -99,6 +99,10 @@ def test_google_maps_url_spot_detail_and_all_routes(client):
     page=client.get('/surf/spots/odeceixe')
     assert page.status_code==200
     assert 'https://www.google.com/maps/search/?api=1&query=' in page.text
+    assert '/static/spot-media/odeceixe-beach.svg' in page.text
+    assert '/static/spot-media/odeceixe-map.svg' in page.text
+    assert 'width="300"' in page.text
+    assert 'gezeichneter Platzhalter' in page.text
     assert 'Odeceixe' in page.text
 
 def test_no_permanent_hardcoded_recommendation(client):

@@ -24,6 +24,16 @@
     <p class="eyebrow">{{ t('peak_notes') }}</p>
     <h2>{{ spot.name }}</h2>
     <p class="tagline">{{ spot.spot_type }} · {{ spot.difficulty }} · stay stoked, avoid the close-out.</p>
+    <div class="spot-media-stack" aria-label="{{ spot.name }} media">
+      <figure class="spot-media-figure">
+        <img src="/static/spot-media/{{ spot.slug }}-beach.svg" width="300" alt="{{ spot.name }} beach illustration">
+        <figcaption>Strandbild: gezeichneter Platzhalter, da keine geprüfte freie Fotolizenz hinterlegt ist.</figcaption>
+      </figure>
+      <figure class="spot-media-figure">
+        <img src="/static/spot-media/{{ spot.slug }}-map.svg" width="300" alt="Map excerpt for {{ spot.name }}">
+        <figcaption>Landkartenausschnitt: Koordinatenbasierte Skizze mit Hauptstraße/Zufahrt.</figcaption>
+      </figure>
+    </div>
     <dl class="grid">
       <dt>{{ t('zone_section') }}</dt><dd>{{ spot.zone_name }}</dd>
       <dt>{{ t('beach_name') }}</dt><dd>{{ spot.beach_name }}</dd>
