@@ -299,7 +299,10 @@ async def ingest_job(db: Session, job: CopernicusIngestionJob) -> dict[str, Any]
     command = build_subset_command(cfg, bbox, start, end, temp_file)
     started = _now()
     env = os.environ.copy()
-    result = await asyncio.to_thread(lambda: subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env, check=True))
+    result = await asyncio.to_thread(lambda: subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env, check=False))
+    if result.returncode != 0:
+        detail = (redact((result.stderr or result.stdout or '').strip()) or '')[:3000]
+        raise RuntimeError(f'copernicusmarine subset failed with exit {result.returncode}: {detail}')
     if result.stderr:
         safe = redact(result.stderr)
         if safe and 'ERROR' in safe.upper():
