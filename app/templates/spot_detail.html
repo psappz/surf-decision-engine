@@ -30,6 +30,7 @@
       <dt>{{ t('latitude') }}</dt><dd>{{ spot.latitude }}</dd>
       <dt>{{ t('longitude') }}</dt><dd>{{ spot.longitude }}</dd>
       <dt>{{ t('map') }}</dt><dd><a href="{{ spot.maps_url|safe }}" rel="noopener noreferrer" target="_blank">{{ t('maps_coordinates') }}</a></dd>
+      <dt>OpenStreetMap</dt><dd><a href="{{ access_map.osm_url|safe }}" rel="noopener noreferrer" target="_blank">OpenStreetMap coordinates</a></dd>
       <dt>{{ t('description') }}</dt><dd>{{ spot.description }}</dd>
       <dt>{{ t('multiple_zones') }}</dt><dd>{{ spot.zone_name }}; parameters are provisional and editable in seed data.</dd>
       <dt>{{ t('type') }}</dt><dd>{{ spot.spot_type }}</dd>
@@ -44,6 +45,29 @@
       <dt>{{ t('last_update') }}</dt><dd>{% if latest %}{{ latest.fetched_at }}{% else %}No forecast{% endif %}</dd>
     </dl>
   </article>
+  <section class="access-panel shell-card">
+    <p class="eyebrow">Access</p>
+    <h2>Access sketch</h2>
+    {% if access_map.asset_exists %}
+      <figure class="access-map-figure">
+        <img class="access-map-image" src="{{ access_map.asset }}" alt="{{ access_map.alt }}">
+        <figcaption>Status: {{ access_map.status|replace('_',' ') }} · SVG contains OpenStreetMap attribution.</figcaption>
+      </figure>
+    {% else %}
+      <div class="access-map-pending" role="note">
+        <strong>Access map pending verification.</strong>
+        <p>No SVG is shown yet because local OpenStreetMap vector data has not been provided for this map. Roads, routes, parking and walking access are intentionally not invented.</p>
+      </div>
+    {% endif %}
+    <dl class="grid">
+      <dt>Access map ID</dt><dd>{{ access_map.config.id if access_map.config else 'unassigned' }}</dd>
+      <dt>Status</dt><dd>{{ access_map.status|replace('_',' ') }}</dd>
+      <dt>Parking information</dt><dd>{{ spot.access_notes }}</dd>
+      <dt>Walking distance</dt><dd>Unknown until reviewed against OpenStreetMap-derived route geometry.</dd>
+      <dt>External navigation</dt><dd><a href="{{ access_map.external_navigation_url|safe }}" rel="noopener noreferrer" target="_blank">Google Maps coordinate search</a> · <a href="{{ access_map.osm_url|safe }}" rel="noopener noreferrer" target="_blank">OpenStreetMap</a></dd>
+      <dt>Warnings</dt><dd>{% if access_map.warnings %}<ul>{% for warning in access_map.warnings %}<li>{{ warning }}</li>{% endfor %}</ul>{% else %}No generated warnings yet.{% endif %}</dd>
+    </dl>
+  </section>
   <section><p class="eyebrow">{{ t('session_scores') }}</p><h2>{{ t('current_forecast') }}</h2><div class="cards">
     {% for part in ['morning','midday','evening'] %}{% set sc=scores.get(part) %}
     <article class="card"><h3>{{ t(part) }} set</h3>{% if sc %}<p class="score-line">{{ surf_call(sc.score, sc.confidence_label) }} · {{ classification_label(sc.classification) }} · {{ sc.score }}/100 · {{ sc.confidence_label }}</p><p>{{ t('estimated_breaking') }} {{ sc.summary.estimated_breaking_range[0] }}–{{ sc.summary.estimated_breaking_range[1] }} m</p><p>{{ sc.explanation }}</p>{% else %}<p>{{ t('no_score') }}</p>{% endif %}</article>

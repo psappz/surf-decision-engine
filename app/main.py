@@ -12,6 +12,7 @@ from .models import Base, User, SurfSpot, SpotScore, DailyRecommendation, Marine
 from .security import verify_password, rate_limited, record_failure, clear_failures, create_session, get_session, destroy_session, set_session_cookie, clear_session_cookie
 from .seed import seed
 from .forecast_service import ensure_seed_forecasts, calculate_recommendations, provider_status, calculate_rankings, spot_daypart_scores
+from .access_maps import access_map_context
 from .config import settings
 from .i18n import normalize_language, normalize_proficiency, translate, SUPPORTED_LANGUAGES, SUPPORTED_PROFICIENCIES, label_for_proficiency, surf_call, classification_label
 app=FastAPI(title='WaveWatch')
@@ -100,7 +101,7 @@ def spot_detail(slug:str, request:Request, user=Depends(require_user), db:OrmSes
     if not spot: raise HTTPException(404)
     date=datetime.now(ZoneInfo(settings.timezone)).date(); by=spot_daypart_scores(db, spot, date, pref['proficiency'])
     latest=db.query(MarineForecast).filter(MarineForecast.spot_id==spot.id).order_by(desc(MarineForecast.fetched_at)).first()
-    return templates.TemplateResponse('spot_detail.html', {'request':request,'user':user,'spot':spot,'scores':by,'csrf':request.state.csrf,'provider_status':provider_status(db),'latest':latest, **pref})
+    return templates.TemplateResponse('spot_detail.html', {'request':request,'user':user,'spot':spot,'scores':by,'csrf':request.state.csrf,'provider_status':provider_status(db),'latest':latest,'access_map':access_map_context(spot), **pref})
 @app.get('/health')
 def health(db:OrmSession=Depends(get_db)):
     try:

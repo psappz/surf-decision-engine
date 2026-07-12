@@ -123,3 +123,10 @@ body:has(.private-login):before,body:has(.private-login):after{display:none}
 .private-login{max-width:28rem;background:#fff;border:1px solid #e5e7eb;box-shadow:0 18px 50px rgba(17,24,39,.10);backdrop-filter:none;text-align:left}
 .private-login h1{text-shadow:none;letter-spacing:0;font-size:1.8rem;color:#111827;text-align:left;margin-bottom:1rem}
 .private-login label{color:#1f2937}.private-login input{border-color:#d1d5db;border-radius:10px}.private-login button{background:#111827;box-shadow:none;border-radius:10px}.private-login button:hover{filter:none;background:#000}
+
+.access-panel{padding:1.2rem}
+.access-map-figure{margin:0 0 1rem}
+.access-map-image{display:block;width:min(100%,760px);height:auto;border:1px solid rgba(6,41,68,.16);border-radius:18px;background:#f2efe8}
+.access-map-figure figcaption{margin-top:.45rem;color:var(--muted);font-size:.9rem}
+.access-map-pending{border:1px dashed rgba(133,77,14,.5);background:#fff7d6;color:#4f3100;border-radius:18px;padding:1rem;margin:0 0 1rem}
+.access-map-pending p{margin:.35rem 0 0}

@@ -1,0 +1,14 @@
+{
+  "config": "/Users/psi/wavewatch/data/access-maps/odeceixe.yaml",
+  "generated_at": "2026-07-12T03:53:57.639358+00:00",
+  "generator_version": "access-map-generator-v1-offline-fixture-required",
+  "map_id": "odeceixe",
+  "osm_data_timestamp": null,
+  "requires_manual_review": true,
+  "route_provider": null,
+  "source_coordinates": {},
+  "verified": false,
+  "warnings": [
+    "No local OpenStreetMap raw/vector fixture found; SVG was not generated to avoid inventing roads, routes, parking, or access restrictions."
+  ]
+}

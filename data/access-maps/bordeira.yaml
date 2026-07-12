@@ -1,0 +1,51 @@
+id: bordeira
+title: Bordeira access
+spot_slugs:
+  - bordeira-north
+  - bordeira-central
+destination:
+  latitude: null
+  longitude: null
+  label: Beach access
+parking:
+  latitude: null
+  longitude: null
+  label: Main parking
+  source: osm
+  osm_type: null
+  osm_id: null
+road_entry:
+  latitude: null
+  longitude: null
+  label: Junction from main road
+driving_route:
+  start:
+    latitude: null
+    longitude: null
+  end:
+    latitude: null
+    longitude: null
+  routing_profile: driving
+  source: null
+walking_route:
+  start:
+    latitude: null
+    longitude: null
+  end:
+    latitude: null
+    longitude: null
+  routing_profile: walking
+  source: null
+surf_zones:
+  - id: main
+    label: Main surf zone
+    latitude: null
+    longitude: null
+viewport:
+  padding_percent: 8
+  preferred_orientation: landscape
+notes:
+  - Requires local OpenStreetMap raw vector data before SVG generation.
+verified: false
+verified_at: null
+verified_by: null
