@@ -73,6 +73,20 @@ def test_direction_wraparound():
     assert in_direction_range(10,315,30)
     assert not in_direction_range(120,315,30)
 
+
+def test_seed_forecast_bounds_include_completed_local_dayparts():
+    from app.forecast_service import _seed_forecast_bounds
+    from app.scoring import local_day_windows
+    from zoneinfo import ZoneInfo
+
+    now = datetime(2026, 7, 13, 22, tzinfo=UTC)
+    start, end = _seed_forecast_bounds(now)
+    windows = local_day_windows(now.astimezone(ZoneInfo('Europe/Lisbon')).date())
+    assert start <= min(window[0] for window in windows.values())
+    assert end >= max(window[1] for window in windows.values())
+    assert end >= now + timedelta(hours=36)
+
+
 def test_spot_scoring_safety_stale_confidence_tide():
     from app.database import SessionLocal
     from app.models import SurfSpot
