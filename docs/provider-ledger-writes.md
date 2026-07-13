@@ -35,3 +35,8 @@ If runtime persistence succeeds but ledger persistence fails while enabled, the 
 
 ## Why reads remain unchanged
 PR 2 is a migration write path only. PR 3 will implement Consensus Engine use of ledger data.
+
+
+## Consensus Engine shadow mode
+
+PR #3 adds a versioned, append-only Consensus Engine in shadow mode. It reads immutable Forecast Ledger provider points and writes `consensus_runs` / `consensus_forecast_points`; current UI, runtime forecasts and recommendations remain unchanged. See `docs/consensus-engine.md` and `docs/consensus-operations.md`.
