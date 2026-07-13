@@ -161,9 +161,10 @@ class ConsensusForecastPoint(Base):
 class SpotAssessmentRun(Base):
     __tablename__ = 'spot_assessment_runs'
     __table_args__ = (
-        UniqueConstraint('consensus_run_id', 'spot_rules_hash', 'spot_intelligence_engine_version', 'configuration_hash', name='uq_assessment_run_input_version'),
+        UniqueConstraint('consensus_run_id', 'spot_rules_hash', 'spot_intelligence_engine_version', 'configuration_hash', 'calculation_scope_hash', 'recalculation_sequence', name='uq_assessment_run_input_scope_sequence'),
         Index('ix_spot_assessment_runs_consensus_run_id', 'consensus_run_id'),
         Index('ix_spot_assessment_runs_status', 'status'),
+        Index('ix_assessment_run_equivalence', 'consensus_run_id', 'spot_rules_hash', 'spot_intelligence_engine_version', 'configuration_hash'),
     )
     id: Mapped[int] = mapped_column(primary_key=True)
     consensus_run_id: Mapped[int] = mapped_column(ForeignKey('consensus_runs.id', ondelete='RESTRICT'), nullable=False)
@@ -172,6 +173,8 @@ class SpotAssessmentRun(Base):
     spot_rules_hash: Mapped[str] = mapped_column(String(128), nullable=False)
     spot_intelligence_engine_version: Mapped[str] = mapped_column(String(80), nullable=False)
     configuration_hash: Mapped[str] = mapped_column(String(128), nullable=False)
+    calculation_scope_hash: Mapped[str] = mapped_column(String(128), nullable=False, default='legacy-unscoped')
+    recalculation_sequence: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     status: Mapped[str] = mapped_column(String(40), nullable=False)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     metadata_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
