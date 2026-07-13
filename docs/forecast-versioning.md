@@ -16,12 +16,13 @@ These timestamps must not be collapsed into one field. A model issued at 00:00, 
 
 - `schema_version`
 - `normalizer_version`
+- `normalizer_configuration_hash`
 - `geographic_bounds_json`
 - `temporal_bounds_json`
 - `status`
 - `error_message`
 
-The same fetch may be normalized more than once with different normalizer versions. The table enforces uniqueness on `fetch_id` and `normalizer_version`.
+The same fetch may be normalized more than once with different normalizer code or configuration. The table enforces uniqueness on `fetch_id`, `normalizer_version`, and `normalizer_configuration_hash`. The configuration hash covers field mappings, unit conversions, sampling-point selection, interpolation policy, and missing-value handling when those are driven by configuration rather than code.
 
 ## Consensus versioning
 
@@ -40,8 +41,9 @@ A consensus run must declare which provider forecast versions were eligible by c
 - `spot_rules_version`
 - `spot_rules_hash`
 - `spot_intelligence_engine_version`
+- `configuration_hash`
 
-The rules hash protects reproducibility when spot metadata or rule text changes under the same human-readable version.
+The rules hash protects reproducibility when spot metadata or rule text changes under the same human-readable version. `configuration_hash` is separate and covers global Spot Intelligence transformation settings so the rules hash does not carry two meanings.
 
 ## Recommendation scoring versioning
 
@@ -50,8 +52,9 @@ The rules hash protects reproducibility when spot metadata or rule text changes 
 - `scoring_engine_version`
 - `scoring_configuration_hash`
 - `surfer_profile_version`
+- `surfer_profile_hash`
 
-Score snapshots are immutable outputs of that scoring run.
+Score snapshots are immutable outputs of that scoring run. The profile hash captures the exact profile configuration when the same human-readable profile version is edited or externalized.
 
 ## Confidence versioning
 

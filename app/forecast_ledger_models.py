@@ -38,7 +38,7 @@ class ProviderPublication(Base):
 class ForecastRun(Base):
     __tablename__ = 'forecast_runs'
     __table_args__ = (
-        UniqueConstraint('fetch_id', 'normalizer_version', name='uq_forecast_run_fetch_normalizer'),
+        UniqueConstraint('fetch_id', 'normalizer_version', 'normalizer_configuration_hash', name='uq_forecast_run_fetch_normalizer_config'),
         Index('ix_forecast_runs_provider_name', 'provider_name'),
         Index('ix_forecast_runs_publication_id', 'publication_id'),
         Index('ix_forecast_runs_fetch_id', 'fetch_id'),
@@ -58,6 +58,7 @@ class ForecastRun(Base):
     temporal_bounds_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     schema_version: Mapped[str] = mapped_column(String(40), nullable=False)
     normalizer_version: Mapped[str] = mapped_column(String(80), nullable=False)
+    normalizer_configuration_hash: Mapped[str] = mapped_column(String(128), nullable=False)
     status: Mapped[str] = mapped_column(String(40), nullable=False)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
@@ -150,7 +151,7 @@ class ConsensusForecastPoint(Base):
 class SpotAssessmentRun(Base):
     __tablename__ = 'spot_assessment_runs'
     __table_args__ = (
-        UniqueConstraint('consensus_run_id', 'spot_rules_hash', 'spot_intelligence_engine_version', name='uq_assessment_run_input_version'),
+        UniqueConstraint('consensus_run_id', 'spot_rules_hash', 'spot_intelligence_engine_version', 'configuration_hash', name='uq_assessment_run_input_version'),
         Index('ix_spot_assessment_runs_consensus_run_id', 'consensus_run_id'),
         Index('ix_spot_assessment_runs_status', 'status'),
     )
@@ -160,6 +161,7 @@ class SpotAssessmentRun(Base):
     spot_rules_version: Mapped[str] = mapped_column(String(80), nullable=False)
     spot_rules_hash: Mapped[str] = mapped_column(String(128), nullable=False)
     spot_intelligence_engine_version: Mapped[str] = mapped_column(String(80), nullable=False)
+    configuration_hash: Mapped[str] = mapped_column(String(128), nullable=False)
     status: Mapped[str] = mapped_column(String(40), nullable=False)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     metadata_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
@@ -196,7 +198,7 @@ class SpotAssessmentPoint(Base):
 class SpotScoreRun(Base):
     __tablename__ = 'spot_score_runs'
     __table_args__ = (
-        UniqueConstraint('assessment_run_id', 'scoring_engine_version', 'scoring_configuration_hash', 'surfer_profile_version', name='uq_score_run_input_version'),
+        UniqueConstraint('assessment_run_id', 'scoring_engine_version', 'scoring_configuration_hash', 'surfer_profile_version', 'surfer_profile_hash', name='uq_score_run_input_version'),
     )
     id: Mapped[int] = mapped_column(primary_key=True)
     assessment_run_id: Mapped[int] = mapped_column(ForeignKey('spot_assessment_runs.id', ondelete='RESTRICT'), nullable=False)
@@ -204,6 +206,7 @@ class SpotScoreRun(Base):
     scoring_engine_version: Mapped[str] = mapped_column(String(80), nullable=False)
     scoring_configuration_hash: Mapped[str] = mapped_column(String(128), nullable=False)
     surfer_profile_version: Mapped[str] = mapped_column(String(80), nullable=False)
+    surfer_profile_hash: Mapped[str] = mapped_column(String(128), nullable=False)
     status: Mapped[str] = mapped_column(String(40), nullable=False)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     metadata_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)

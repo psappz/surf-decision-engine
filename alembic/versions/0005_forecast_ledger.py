@@ -54,10 +54,11 @@ forecast_runs = sa.Table(
     sa.Column('temporal_bounds_json', sa.JSON(), nullable=True),
     sa.Column('schema_version', sa.String(80), nullable=False),
     sa.Column('normalizer_version', sa.String(120), nullable=False),
+    sa.Column('normalizer_configuration_hash', sa.String(128), nullable=False),
     sa.Column('status', sa.String(40), nullable=False),
     sa.Column('error_message', sa.Text(), nullable=True),
     sa.Column('created_at', sa.DateTime(timezone=True), nullable=False),
-    sa.UniqueConstraint('fetch_id', 'normalizer_version', name='uq_forecast_run_fetch_normalizer'),
+    sa.UniqueConstraint('fetch_id', 'normalizer_version', 'normalizer_configuration_hash', name='uq_forecast_run_fetch_normalizer_config'),
     sa.Index('ix_forecast_runs_provider_name', 'provider_name'),
     sa.Index('ix_forecast_runs_publication_id', 'publication_id'),
     sa.Index('ix_forecast_runs_fetch_id', 'fetch_id'),
@@ -146,11 +147,12 @@ spot_assessment_runs = sa.Table(
     sa.Column('spot_rules_version', sa.String(120), nullable=False),
     sa.Column('spot_rules_hash', sa.String(128), nullable=False),
     sa.Column('spot_intelligence_engine_version', sa.String(120), nullable=False),
+    sa.Column('configuration_hash', sa.String(128), nullable=False),
     sa.Column('status', sa.String(40), nullable=False),
     sa.Column('error_message', sa.Text(), nullable=True),
     sa.Column('metadata_json', sa.JSON(), nullable=True),
     sa.Column('created_at', sa.DateTime(timezone=True), nullable=False),
-    sa.UniqueConstraint('consensus_run_id', 'spot_rules_hash', 'spot_intelligence_engine_version', name='uq_assessment_run_consensus_rules_engine'),
+    sa.UniqueConstraint('consensus_run_id', 'spot_rules_hash', 'spot_intelligence_engine_version', 'configuration_hash', name='uq_assessment_run_consensus_rules_engine'),
 )
 
 spot_assessment_points = sa.Table(
@@ -186,11 +188,12 @@ spot_score_runs = sa.Table(
     sa.Column('scoring_engine_version', sa.String(120), nullable=False),
     sa.Column('scoring_configuration_hash', sa.String(128), nullable=False),
     sa.Column('surfer_profile_version', sa.String(120), nullable=False),
+    sa.Column('surfer_profile_hash', sa.String(128), nullable=False),
     sa.Column('status', sa.String(40), nullable=False),
     sa.Column('error_message', sa.Text(), nullable=True),
     sa.Column('metadata_json', sa.JSON(), nullable=True),
     sa.Column('created_at', sa.DateTime(timezone=True), nullable=False),
-    sa.UniqueConstraint('assessment_run_id', 'scoring_engine_version', 'scoring_configuration_hash', 'surfer_profile_version', name='uq_score_run_assessment_engine_config_profile'),
+    sa.UniqueConstraint('assessment_run_id', 'scoring_engine_version', 'scoring_configuration_hash', 'surfer_profile_version', 'surfer_profile_hash', name='uq_score_run_assessment_engine_config_profile'),
 )
 
 spot_score_snapshots = sa.Table(

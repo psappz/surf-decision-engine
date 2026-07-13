@@ -112,6 +112,7 @@ def _run(db, pub, fetch, normalizer='normalizer-v1', issued=None):
         temporal_bounds_json={'start': _now().isoformat(), 'end': _now(24).isoformat()},
         schema_version='forecast-point-v1',
         normalizer_version=normalizer,
+        normalizer_configuration_hash='normalizer-cfg-a',
         status='succeeded',
     )
 
@@ -129,11 +130,23 @@ def test_migration_upgrade_and_downgrade_tables():
     assert 'provider_fetches' in names
     columns = {c['name'] for c in inspect(engine).get_columns('provider_fetches')}
     assert {'publication_id', 'attempt_number', 'payload_checksum', 'raw_file_deleted_at'} <= columns
+    forecast_columns = {c['name'] for c in inspect(engine).get_columns('forecast_runs')}
+    assessment_columns = {c['name'] for c in inspect(engine).get_columns('spot_assessment_runs')}
+    score_columns = {c['name'] for c in inspect(engine).get_columns('spot_score_runs')}
+    assert 'normalizer_configuration_hash' in forecast_columns
+    assert 'configuration_hash' in assessment_columns
+    assert 'surfer_profile_hash' in score_columns
     down = subprocess.run(['.venv/bin/alembic', 'downgrade', '0005_user_favs'], cwd=PROJECT_ROOT, env=env, text=True, capture_output=True, timeout=120)
     assert down.returncode == 0, down.stderr + down.stdout
     names_after = set(inspect(engine).get_table_names())
     assert not (LEDGER_TABLES & names_after)
     assert 'provider_fetches' in names_after
+
+
+def test_repository_facade_preserves_import_compatibility():
+    from app.forecast_ledger_repository import create_forecast_run as facade_create_forecast_run
+    from app.repositories.forecast_repository import create_forecast_run as split_create_forecast_run
+    assert facade_create_forecast_run is split_create_forecast_run
 
 
 def test_publication_identity_uniqueness_and_nullable_dataset(db_session):
@@ -217,9 +230,9 @@ def test_derived_snapshots_and_recommendations_are_append_only(db_session):
             {'consensus_run_id': c1.id, 'spot_id': spot_id, 'valid_at': valid, 'wave_height': 1.2, 'provider_count': 1},
             {'consensus_run_id': c2.id, 'spot_id': spot_id, 'valid_at': valid, 'wave_height': 1.6, 'provider_count': 2},
         ])
-        ar = create_spot_assessment_run(db, consensus_run_id=c1.id, calculated_at=_now(), spot_rules_version='rules-v1', spot_rules_hash='hash1', spot_intelligence_engine_version='spot-v1', status='succeeded')
+        ar = create_spot_assessment_run(db, consensus_run_id=c1.id, calculated_at=_now(), spot_rules_version='rules-v1', spot_rules_hash='hash1', spot_intelligence_engine_version='spot-v1', configuration_hash='spot-engine-cfg', status='succeeded')
         create_spot_assessment_points(db, [{'assessment_run_id': ar.id, 'spot_id': spot_id, 'valid_at': valid, 'breaking_wave_min': 0.8, 'breaking_wave_max': 1.3}])
-        sr = create_spot_score_run(db, assessment_run_id=ar.id, calculated_at=_now(), scoring_engine_version='score-v1', scoring_configuration_hash='score-cfg', surfer_profile_version='profile-v1', status='succeeded')
+        sr = create_spot_score_run(db, assessment_run_id=ar.id, calculated_at=_now(), scoring_engine_version='score-v1', scoring_configuration_hash='score-cfg', surfer_profile_version='profile-v1', surfer_profile_hash='profile-hash', status='succeeded')
         create_spot_score_snapshots(db, [{'score_run_id': sr.id, 'spot_id': spot_id, 'valid_at': valid, 'total_score': 82, 'condition_classification': 'go'}])
         cr = create_confidence_run(db, calculated_at=_now(), forecast_cutoff_at=_now(), confidence_engine_version='conf-v1', configuration_hash='conf-cfg', status='succeeded')
         create_confidence_snapshots(db, [{'confidence_run_id': cr.id, 'spot_id': spot_id, 'valid_at': valid, 'confidence_score': 74, 'confidence_label': 'medium', 'reasons_json': ['test']}])
