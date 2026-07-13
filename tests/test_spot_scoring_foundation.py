@@ -200,6 +200,8 @@ def test_compatibility_facade_exports_mature_score_repository():
 def test_profile_snapshot_validation_hashes_and_unknown_profiles():
     profile = surfer_profile_snapshot('beginner')
     assert profile.canonicalized().effective_values() == profile.canonical_payload()
+    assert 'hazard_tolerance' not in profile.canonical_payload()
+    assert 'technical_spot_tolerance' not in profile.canonical_payload()
     renamed = SurferProfileSnapshot(profile_name='beginner', profile_version='other-v2',
                                     **profile.effective_values())
     assert renamed.profile_hash == profile.profile_hash
@@ -210,14 +212,12 @@ def test_profile_snapshot_validation_hashes_and_unknown_profiles():
             profile_name='beginner', profile_version='v1',
             preferred_breaking_wave_min=True, preferred_breaking_wave_max=1,
             maximum_safe_breaking_wave=2, preferred_period_min=5,
-            preferred_period_max=10, hazard_tolerance=.1,
-            technical_spot_tolerance=.1,
+            preferred_period_max=10,
         ).validate()
     with pytest.raises(ValueError):
         SurferProfileSnapshot(
             profile_name='beginner', profile_version='v1',
             preferred_breaking_wave_min=2, preferred_breaking_wave_max=1,
             maximum_safe_breaking_wave=3, preferred_period_min=5,
-            preferred_period_max=10, hazard_tolerance=.1,
-            technical_spot_tolerance=.1,
+            preferred_period_max=10,
         ).validate()

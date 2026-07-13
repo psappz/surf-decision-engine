@@ -88,8 +88,6 @@ class SurferProfileSnapshot:
     maximum_safe_breaking_wave: float | None
     preferred_period_min: float | None
     preferred_period_max: float | None
-    hazard_tolerance: float
-    technical_spot_tolerance: float
 
     def effective_values(self) -> dict[str, Any]:
         if self.profile_name not in KNOWN_SURFER_PROFILES:
@@ -101,8 +99,6 @@ class SurferProfileSnapshot:
             'maximum_safe_breaking_wave': _optional_number('maximum_safe_breaking_wave', self.maximum_safe_breaking_wave),
             'preferred_period_min': _optional_number('preferred_period_min', self.preferred_period_min),
             'preferred_period_max': _optional_number('preferred_period_max', self.preferred_period_max),
-            'hazard_tolerance': _number('hazard_tolerance', self.hazard_tolerance),
-            'technical_spot_tolerance': _number('technical_spot_tolerance', self.technical_spot_tolerance),
         }
         _ordered_optional_bounds('breaking-wave', values['preferred_breaking_wave_min'], values['preferred_breaking_wave_max'])
         _ordered_optional_bounds('period', values['preferred_period_min'], values['preferred_period_max'])
@@ -113,9 +109,6 @@ class SurferProfileSnapshot:
         safe = values['maximum_safe_breaking_wave']
         if wave_max is not None and safe is not None and safe < wave_max:
             raise ValueError('maximum_safe_breaking_wave must not be below the preferred maximum')
-        for field in ('hazard_tolerance', 'technical_spot_tolerance'):
-            if not 0 <= values[field] <= 1:
-                raise ValueError(f'{field} must be in 0..1')
         return values
 
     def validate(self) -> None:
@@ -148,14 +141,16 @@ def _ordered_optional_bounds(name: str, lower: float | None, upper: float | None
         raise ValueError(f'{name} bounds must be strictly ordered')
 
 
-# These are immutable snapshots of existing selectable proficiency categories;
-# they are provenance inputs only. No total formula consumes them in this slice.
+# These are exact physical-range values from the existing selectable
+# proficiency categories. Legacy hazard penalties and advanced-fit points are
+# deliberately omitted: no approved mapping exists from those values into the
+# new scoring model. No total formula consumes this snapshot in this slice.
 _PROFILE_VALUES: dict[str, dict[str, float | None]] = {
-    'beginner': dict(preferred_breaking_wave_min=.35, preferred_breaking_wave_max=.9, maximum_safe_breaking_wave=1.25, preferred_period_min=6, preferred_period_max=11, hazard_tolerance=.10, technical_spot_tolerance=.10),
-    'rookie': dict(preferred_breaking_wave_min=.45, preferred_breaking_wave_max=1.15, maximum_safe_breaking_wave=1.55, preferred_period_min=7, preferred_period_max=12, hazard_tolerance=.25, technical_spot_tolerance=.25),
-    'intermediate': dict(preferred_breaking_wave_min=.65, preferred_breaking_wave_max=1.65, maximum_safe_breaking_wave=2.25, preferred_period_min=8, preferred_period_max=14, hazard_tolerance=.50, technical_spot_tolerance=.50),
-    'advanced': dict(preferred_breaking_wave_min=None, preferred_breaking_wave_max=None, maximum_safe_breaking_wave=None, preferred_period_min=None, preferred_period_max=None, hazard_tolerance=.80, technical_spot_tolerance=.85),
-    'pro': dict(preferred_breaking_wave_min=.9, preferred_breaking_wave_max=2.5, maximum_safe_breaking_wave=3.8, preferred_period_min=10, preferred_period_max=18, hazard_tolerance=.95, technical_spot_tolerance=1.0),
+    'beginner': dict(preferred_breaking_wave_min=.35, preferred_breaking_wave_max=.9, maximum_safe_breaking_wave=1.25, preferred_period_min=6, preferred_period_max=11),
+    'rookie': dict(preferred_breaking_wave_min=.45, preferred_breaking_wave_max=1.15, maximum_safe_breaking_wave=1.55, preferred_period_min=7, preferred_period_max=12),
+    'intermediate': dict(preferred_breaking_wave_min=.65, preferred_breaking_wave_max=1.65, maximum_safe_breaking_wave=2.25, preferred_period_min=8, preferred_period_max=14),
+    'advanced': dict(preferred_breaking_wave_min=None, preferred_breaking_wave_max=None, maximum_safe_breaking_wave=None, preferred_period_min=None, preferred_period_max=None),
+    'pro': dict(preferred_breaking_wave_min=.9, preferred_breaking_wave_max=2.5, maximum_safe_breaking_wave=3.8, preferred_period_min=10, preferred_period_max=18),
 }
 KNOWN_SURFER_PROFILES = frozenset(_PROFILE_VALUES)
 

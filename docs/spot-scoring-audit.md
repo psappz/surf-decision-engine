@@ -26,9 +26,9 @@ The repository boundary is append-only; no cross-dialect trigger is claimed. Con
 
 ## Canonical provenance types
 
-`SpotScoringConfiguration` and `SurferProfileSnapshot` are frozen validated values. Their `effective_values()` are canonicalized to the same practical numeric representation used by their SHA-256 hashes. Engine/profile versions and profile names are persisted separately and excluded from behavior hashes. Booleans are not accepted as numbers; non-finite numbers, unordered or incomplete bounds, invalid versions, out-of-range tolerances, and unknown profiles fail closed.
+`SpotScoringConfiguration` and `SurferProfileSnapshot` are frozen validated values. Their `effective_values()` are canonicalized to the same practical numeric representation used by their SHA-256 hashes. Engine/profile versions and profile names are persisted separately and excluded from behavior hashes. Booleans are not accepted as numbers; non-finite numbers, unordered or incomplete bounds, invalid versions, and unknown profiles fail closed.
 
-The profile snapshots preserve the application's existing selectable proficiency categories as immutable provenance inputs. This slice does not define how any field contributes to a score.
+The profile snapshots preserve only the directly evidenced physical wave/period ranges from the application's existing selectable proficiency categories. Legacy hazard penalties and advanced-fit points are intentionally omitted: converting them into normalized tolerances or new deductions would invent product semantics. Hazard handling, technical-spot behavior, factor weights, missing-data policy, classification thresholds, and `safety_score` semantics remain explicit product gates. This slice does not define how any profile field contributes to a score.
 
 ## Migration and legacy data
 
