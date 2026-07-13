@@ -102,7 +102,7 @@ class CopernicusConfig:
         if not self.variable_map:
             reasons.append('COPERNICUSMARINE_VARIABLE_MAP_JSON is not set')
         elif self.variable_map != REQUIRED_VARIABLE_MAP:
-            reasons.append('COPERNICUSMARINE_VARIABLE_MAP_JSON does not match the required WaveWatch mapping')
+            reasons.append('COPERNICUSMARINE_VARIABLE_MAP_JSON does not match the required Surf Decision Engine mapping')
         if copernicusmarine_executable() is None:
             reasons.append('copernicusmarine CLI is not installed')
         return reasons
@@ -279,6 +279,19 @@ def _select_nearest_valid_ocean_point(
     return selected
 
 
+def _coord_scalar(dataset: Any, coord_name: str) -> float | None:
+    try:
+        coord = dataset[coord_name]
+        value = getattr(coord, 'values', coord)
+        if hasattr(value, 'item'):
+            value = value.item()
+        elif isinstance(value, (list, tuple)):
+            value = value[0]
+        return round(float(value), 6)
+    except Exception:
+        return None
+
+
 def parse_copernicus_netcdf(
     path: Path,
     latitude: float,
@@ -297,6 +310,8 @@ def parse_copernicus_netcdf(
         lon_name = _dataset_coord_name(dataset, ('longitude', 'lon'))
         time_name = _dataset_coord_name(dataset, ('time', 'valid_time'))
         selected = _select_nearest_valid_ocean_point(dataset, latitude, longitude, lat_name, lon_name, time_name, variable_map)
+        selected_latitude = _coord_scalar(selected, lat_name)
+        selected_longitude = _coord_scalar(selected, lon_name)
         times = selected[time_name].values
         points: list[MarineForecastPoint] = []
         for index, raw_time in enumerate(times):
@@ -315,6 +330,14 @@ def parse_copernicus_netcdf(
                 else:
                     values[normalized] = value
             if values:
+                values['requested_latitude'] = round(float(latitude), 6)
+                values['requested_longitude'] = round(float(longitude), 6)
+                if selected_latitude is not None:
+                    values['selected_latitude'] = selected_latitude
+                if selected_longitude is not None:
+                    values['selected_longitude'] = selected_longitude
+                if selected_latitude is not None and selected_longitude is not None:
+                    values['selected_grid'] = f'{selected_latitude:.6f},{selected_longitude:.6f}'
                 points.append(MarineForecastPoint(_to_datetime(raw_time), values, provider_name))
         return points
     finally:

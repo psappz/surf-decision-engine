@@ -6,7 +6,7 @@ Important: `GLOBAL_ANALYSISFORECAST_WAV_001_027` is a Copernicus Marine product 
 
 ## Current state
 
-WaveWatch has a guarded Copernicus provider path, but it remains disabled until the toolbox, credentials, and verified dataset variable mapping are present. The app must not fetch Copernicus data during normal page rendering. Fetching happens only inside the protected provider refresh bundle.
+Surf Decision Engine has a guarded Copernicus provider path, but it remains disabled until the toolbox, credentials, and verified dataset variable mapping are present. The app must not fetch Copernicus data during normal page rendering. Fetching happens only inside the protected provider refresh bundle.
 
 ## Required local/VPS environment
 
@@ -54,11 +54,11 @@ copernicusmarine.open_dataset(
 )
 ```
 
-Treat that only as proof of the API shape unless it is the selected wave product. `cmems_mod_glo_phy-cur_anfc_0.083deg_P1D-m` is a physical-current dataset sample using current variables `uo`/`vo`, and the shown bbox is not the Aljezur coast. WaveWatch needs a wave forecast dataset and wave variables, not a current dataset.
+Treat that only as proof of the API shape unless it is the selected wave product. `cmems_mod_glo_phy-cur_anfc_0.083deg_P1D-m` is a physical-current dataset sample using current variables `uo`/`vo`, and the shown bbox is not the Aljezur coast. Surf Decision Engine needs a wave forecast dataset and wave variables, not a current dataset.
 
 Document the exact variable names for at least:
 
-| WaveWatch normalized field | Copernicus variable from `describe` | Status |
+| Surf Decision Engine normalized field | Copernicus variable from `describe` | Status |
 | --- | --- | --- |
 | `wave_height` | `VHM0` | required; sea_surface_wave_significant_height |
 | `wave_direction` | `VMDR` | required; sea_surface_wave_from_direction |

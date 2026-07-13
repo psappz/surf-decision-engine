@@ -81,3 +81,7 @@ Confidence snapshots preserve score components and reasons separately from spot 
 - `surfer_profile_version`
 
 Multiple recommendation snapshots for the same date and daypart are valid. They represent distinct generations, not updates.
+
+## PR 2 provider ledger dual-write note
+
+Surf Decision Engine provider ingestion can dual-write successful provider runs into the append-only Forecast Ledger when `PROVIDER_LEDGER_WRITES_ENABLED=true`. The default remains disabled for production-style environments. Current runtime tables, recommendations, scoring, scheduler ownership, and UI read paths remain unchanged. See `docs/provider-ledger-writes.md`, `docs/provider-data-mapping.md`, and `docs/provider-ledger-failure-recovery.md` for the PR 2 implementation details.

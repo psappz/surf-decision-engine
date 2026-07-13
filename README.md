@@ -1,6 +1,6 @@
-# WaveWatch local prototype
+# Surf Decision Engine local prototype
 
-WaveWatch is a private FastAPI/Jinja2 surf recommendation prototype for advanced surfers around Aljezur, Portugal. The future public host is `loli.restricted.invalid`, but this task intentionally performs **no VPS deployment**.
+Surf Decision Engine is a private FastAPI/Jinja2 surf recommendation prototype for advanced surfers around Aljezur, Portugal. The future public host is `loli.restricted.invalid`, but this task intentionally performs **no VPS deployment**.
 
 ## Architecture
 - FastAPI backend with server-rendered Jinja2 HTML and minimal CSS.
@@ -49,7 +49,7 @@ Confidence is independent of quality and depends on provider count/agreement, ag
 Use `/health` or the Provider Status section in `/surf` and spot detail pages. Each provider is protected by a 30-minute data-gathering bundle limit: the limit applies to the complete provider refresh bundle, not to each individual HTTP request inside that bundle. Hover over a provider chip to see why it is healthy/degraded/disabled/unavailable; click it to open a dismissible modal with human-readable fetched values.
 
 ## Language and proficiency preferences
-WaveWatch supports English, German, and Portuguese UI labels. Authenticated pages expose a top-right language selector and a proficiency selector with `beginner`, `rookie`, `intermediate`, `advanced`, and `pro`. The proficiency selection changes recommendation scoring, alternatives, spot-detail scores, and the surf-call column in the surf-spot table. Preferences are stored in local SameSite=Lax cookies.
+Surf Decision Engine supports English, German, and Portuguese UI labels. Authenticated pages expose a top-right language selector and a proficiency selector with `beginner`, `rookie`, `intermediate`, `advanced`, and `pro`. The proficiency selection changes recommendation scoring, alternatives, spot-detail scores, and the surf-call column in the surf-spot table. Preferences are stored in local SameSite=Lax cookies.
 
 ## Run tests
 ```bash
@@ -65,3 +65,7 @@ Create an adapter implementing `MarineForecastProvider.fetch_forecast()`, normal
 
 ## Future VPS deployment
 Future deployment can run Docker, Caddy, and PostgreSQL for `loli.restricted.invalid`. This repository includes `docs/deployment-plan.md`, but no remote action, DNS change, firewall change, or VPS deployment was performed.
+
+## PR 2 provider ledger dual-write note
+
+Surf Decision Engine provider ingestion can dual-write successful provider runs into the append-only Forecast Ledger when `PROVIDER_LEDGER_WRITES_ENABLED=true`. The default remains disabled for production-style environments. Current runtime tables, recommendations, scoring, scheduler ownership, and UI read paths remain unchanged. See `docs/provider-ledger-writes.md`, `docs/provider-data-mapping.md`, and `docs/provider-ledger-failure-recovery.md` for the PR 2 implementation details.

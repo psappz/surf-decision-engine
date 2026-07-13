@@ -3,6 +3,8 @@ from types import SimpleNamespace
 from sqlalchemy import delete, desc
 from .models import SurfSpot, MarineForecast, WeatherForecast, TideForecast, ProviderFetch, SpotScore, DailyRecommendation, CopernicusPublication, CopernicusIngestionJob
 from .providers import TideProvider
+from .services.provider_ledger_writer import ForecastRunDescriptor, NormalizedProviderForecastPoint, ProviderFetchDescriptor, ProviderPublicationDescriptor, ledger_writes_enabled, mark_ledger_failure, write_json_raw_payload, write_provider_ledger
+from .services.provider_publication_identity import build_open_meteo_publication_identity
 from .copernicus import aljezur_bbox, load_copernicus_config, parse_copernicus_netcdf, run_subset_download
 from .scoring import local_day_windows, aggregate_daypart, normalize_profile
 
@@ -11,6 +13,59 @@ PROVIDER_FETCH_INTERVAL = timedelta(minutes=30)
 
 def _aware(dt):
     return dt if dt and dt.tzinfo else (dt.replace(tzinfo=UTC) if dt else None)
+
+
+def _ledger_temporal_bounds(start, end):
+    return {'start': _aware(start).isoformat(), 'end': _aware(end).isoformat()}
+
+
+def _om_point(provider_name: str, spot_id: int, ts: datetime, values: dict) -> NormalizedProviderForecastPoint:
+    if provider_name.endswith('weather'):
+        return NormalizedProviderForecastPoint(
+            spot_id=spot_id,
+            sample_point_id=None,
+            valid_at=ts,
+            wind_speed=values.get('wind_speed_10m'),
+            wind_direction=values.get('wind_direction_10m'),
+            wind_gust=values.get('wind_gusts_10m'),
+            raw_values=values,
+            quality_flags={k: 'missing' for k in ('wind_speed_10m', 'wind_direction_10m', 'wind_gusts_10m') if values.get(k) is None},
+        )
+    return NormalizedProviderForecastPoint(
+        spot_id=spot_id,
+        sample_point_id=None,
+        valid_at=ts,
+        wave_height=values.get('wave_height'),
+        wave_direction=values.get('wave_direction'),
+        wave_period=values.get('wave_period'),
+        swell_wave_height=values.get('swell_wave_height'),
+        swell_wave_direction=values.get('swell_wave_direction'),
+        swell_wave_period=values.get('swell_wave_period'),
+        wind_wave_height=values.get('wind_wave_height'),
+        wind_wave_direction=values.get('wind_wave_direction'),
+        wind_wave_period=values.get('wind_wave_period'),
+        water_temperature=values.get('sea_surface_temperature'),
+        current_speed=values.get('ocean_current_velocity'),
+        current_direction=values.get('ocean_current_direction'),
+        raw_values=values,
+        quality_flags={k: 'missing' for k in ('wave_height', 'wave_direction', 'wave_period') if values.get(k) is None},
+    )
+
+
+def _write_open_meteo_fixture_ledger(db, provider_name: str, pf: ProviderFetch, points: list[NormalizedProviderForecastPoint], start: datetime, end: datetime, fetched_at: datetime):
+    if not ledger_writes_enabled() or not points:
+        return None
+    identity = build_open_meteo_publication_identity(provider_name, None, None, start, end, issue_time=start, response_metadata={'fixture': True, 'point_count': len(points)})
+    raw_payload = {'provider': provider_name, 'start': start.isoformat(), 'end': end.isoformat(), 'point_count': len(points)}
+    raw_path, checksum, size = write_json_raw_payload(provider_name, identity, raw_payload)
+    result = write_provider_ledger(
+        db,
+        ProviderPublicationDescriptor(provider_name=provider_name, product_id='open-meteo-fixture', dataset_id=provider_name, publication_identity=identity, model_cycle_at=start, source_updated_at=fetched_at, latest_valid_at=end, detected_at=fetched_at, metadata=raw_payload),
+        ProviderFetchDescriptor(started_at=fetched_at, completed_at=fetched_at, status='healthy', download_size_bytes=size, payload_checksum=checksum, raw_payload_path=raw_path, metadata={'legacy_provider_fetch_id': pf.id}),
+        ForecastRunDescriptor(issued_at=start, fetched_at=fetched_at, normalized_at=fetched_at, geographic_bounds=None, temporal_bounds=_ledger_temporal_bounds(start, end), normalizer_version='open-meteo-fixture-normalizer-v1', normalizer_configuration_hash=f'{provider_name}-fixture-config-v1'),
+        points,
+    )
+    return result
 
 
 def provider_can_fetch(db, provider_name: str, now: datetime | None = None) -> tuple[bool, datetime | None]:
@@ -148,7 +203,7 @@ async def _ensure_copernicus_forecasts(db, spots, start, end):
     can_fetch, _ = provider_can_fetch(db, 'copernicus-marine', datetime.now(UTC))
     if not can_fetch:
         return _latest_fetch(db, 'copernicus-marine')
-    output = config.cache_dir / 'wavewatch-copernicus-latest.nc'
+    output = config.cache_dir / 'surf-decision-engine-copernicus-latest.nc'
     pf=ProviderFetch(provider_name='copernicus-marine',fetched_at=datetime.now(UTC),latitude=None,longitude=None,status='started',raw_response={'dataset_id':config.dataset_id,'variables':sorted(set((config.variable_map or {}).values()))},parsing_errors=None,data_age_seconds=None)
     db.add(pf); db.flush()
     try:
@@ -175,6 +230,7 @@ async def ensure_seed_forecasts(db):
     if db.query(MarineForecast).filter(MarineForecast.forecast_time>=now).first() and not can_fetch:
         return
     pf=ProviderFetch(provider_name='mock-open-meteo-fixture',fetched_at=datetime.now(UTC),latitude=None,longitude=None,status='healthy',raw_response={'fixture':'clean long-period north-west swell','rate_limit':'one provider fetch bundle every 30 minutes','scope':'marine + weather + tide prototype bundle'},parsing_errors=None,data_age_seconds=0); db.add(pf); db.flush()
+    marine_ledger_points=[]; weather_ledger_points=[]
     tide_points=await TideProvider().fetch_forecast(0,0,start,end)
     for spot in spots:
         for i in range(int((end-start).total_seconds()//3600)+1):
@@ -183,8 +239,18 @@ async def ensure_seed_forecasts(db):
             weather={'wind_speed_10m':8 if hour<12 else 14,'wind_direction_10m':105 if hour<12 else 285,'wind_gusts_10m':18,'temperature_2m':22,'precipitation':0,'cloud_cover':30,'visibility':20000}
             db.add(MarineForecast(provider_fetch_id=pf.id,provider_name='mock-open-meteo-marine',spot_id=spot.id,forecast_time=ts,fetched_at=now,values=marine,provider_status='healthy'))
             db.add(WeatherForecast(provider_fetch_id=pf.id,provider_name='mock-open-meteo-weather',spot_id=spot.id,forecast_time=ts,fetched_at=now,values=weather,provider_status='healthy'))
+            marine_ledger_points.append(_om_point('open-meteo-marine', spot.id, ts, marine))
+            weather_ledger_points.append(_om_point('open-meteo-weather', spot.id, ts, weather))
             tv=next((p.values for p in tide_points if p.timestamp==ts), {'water_level':.5,'state':'estimated'})
             db.add(TideForecast(provider_fetch_id=pf.id,provider_name='astronomical-tide-estimate',spot_id=spot.id,forecast_time=ts,fetched_at=now,values=tv,provider_status='healthy'))
+    if ledger_writes_enabled():
+        try:
+            marine_result = _write_open_meteo_fixture_ledger(db, 'open-meteo-marine', pf, marine_ledger_points, start, end, now)
+            weather_result = _write_open_meteo_fixture_ledger(db, 'open-meteo-weather', pf, weather_ledger_points, start, end, now)
+            pf.metadata_json = {**(pf.metadata_json or {}), 'ledger_writes_enabled': True, 'open_meteo_marine_ledger': getattr(marine_result, '__dict__', None), 'open_meteo_weather_ledger': getattr(weather_result, '__dict__', None)}
+        except Exception as exc:
+            mark_ledger_failure(db, pf.id, str(exc), {'stage': 'open_meteo_fixture_dual_write'})
+            raise
     db.commit(); calculate_recommendations(db)
 
 
@@ -271,6 +337,7 @@ def spot_daypart_scores(db, spot, score_date=None, profile='advanced'):
 
 
 def provider_status(db):
+    from .forecast_ledger_models import ForecastRun, ProviderPublication
     latest_marine=db.query(MarineForecast).order_by(desc(MarineForecast.fetched_at)).first()
     latest_weather=db.query(WeatherForecast).order_by(desc(WeatherForecast.fetched_at)).first()
     latest_tide=db.query(TideForecast).order_by(desc(TideForecast.fetched_at)).first()
@@ -281,10 +348,20 @@ def provider_status(db):
     copernicus_config=load_copernicus_config()
     copernicus_missing=copernicus_config.missing_reasons
     fixture=_latest_fetch(db,'mock-open-meteo-fixture')
+    latest_ledger_publication=db.query(ProviderPublication).order_by(desc(ProviderPublication.detected_at)).first()
+    latest_ledger_run=db.query(ForecastRun).order_by(desc(ForecastRun.created_at)).first()
+    ledger_diag={'enabled': ledger_writes_enabled(), 'latest_publication_id': latest_ledger_publication.id if latest_ledger_publication else None, 'latest_forecast_run_id': latest_ledger_run.id if latest_ledger_run else None, 'latest_status': latest_ledger_publication.status if latest_ledger_publication else None}
     can_fetch, last_fetch = provider_can_fetch(db, 'mock-open-meteo-fixture')
     next_fetch = (_aware(last_fetch) + PROVIDER_FETCH_INTERVAL).isoformat() if last_fetch and not can_fetch else 'available now'
     shared_rate = f"Protected by 30-minute bundle limit. Next external-style bundle: {next_fetch}."
     return {
+        'provider-ledger-writes': {
+            'status': 'enabled' if ledger_diag['enabled'] else 'disabled',
+            'reason': 'Append-only provider ledger dual-write flag is enabled.' if ledger_diag['enabled'] else 'Append-only provider ledger dual-write flag is disabled; runtime tables behave as before.',
+            'last_fetch': 'n/a',
+            'rate_limit': 'Follows each provider ingestion path; page rendering does not initiate provider fetches.',
+            'human_data': [f"latest publication id: {ledger_diag['latest_publication_id']}", f"latest forecast run id: {ledger_diag['latest_forecast_run_id']}", f"latest status: {ledger_diag['latest_status']}"],
+        },
         'open-meteo-marine': {
             'status':'healthy' if latest_marine else 'unavailable',
             'reason':'Marine forecast points are available from the latest protected provider bundle.' if latest_marine else 'No marine forecast has been stored yet.',

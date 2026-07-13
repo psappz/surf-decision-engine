@@ -28,6 +28,8 @@ from .copernicus import (
 )
 from .forecast_service import calculate_recommendations
 from .models import CopernicusIngestionJob, CopernicusPublication, MarineForecast, ProviderFetch, SurfSpot
+from .services.provider_ledger_writer import ForecastRunDescriptor, NormalizedProviderForecastPoint, ProviderFetchDescriptor, ProviderPublicationDescriptor, ledger_writes_enabled, mark_ledger_failure, write_provider_ledger
+from .services.provider_publication_identity import build_copernicus_publication_identity
 
 PROVIDER = 'copernicus-marine'
 JOB_LEASE_MINUTES = 120
@@ -285,6 +287,27 @@ def validate_netcdf(path: Path, variable_map: dict[str, str], bbox: tuple[float,
             close()
 
 
+def _ledger_point_from_copernicus(spot_id: int, point) -> NormalizedProviderForecastPoint:
+    values = point.values or {}
+    quality_flags = {key: 'missing' for key in ('wave_height', 'wave_direction', 'wave_period') if values.get(key) is None}
+    return NormalizedProviderForecastPoint(
+        spot_id=spot_id,
+        sample_point_id=values.get('sample_point_id') or values.get('selected_grid'),
+        valid_at=point.timestamp,
+        wave_height=values.get('wave_height'),
+        wave_direction=values.get('wave_direction'),
+        wave_period=values.get('wave_period'),
+        swell_wave_height=values.get('swell_wave_height'),
+        swell_wave_direction=values.get('swell_wave_direction'),
+        swell_wave_period=values.get('swell_wave_period'),
+        wind_wave_height=values.get('wind_wave_height'),
+        wind_wave_direction=values.get('wind_wave_direction'),
+        wind_wave_period=values.get('wind_wave_period'),
+        raw_values={'source_variables': REQUIRED_VARIABLE_MAP, **values},
+        quality_flags=quality_flags,
+    )
+
+
 async def ingest_job(db: Session, job: CopernicusIngestionJob) -> dict[str, Any]:
     cfg = load_copernicus_config()
     if cfg.missing_reasons:
@@ -322,11 +345,13 @@ async def ingest_job(db: Session, job: CopernicusIngestionJob) -> dict[str, Any]
     db.add(fetch)
     db.flush()
     inserted = 0
+    ledger_points = []
     for spot in spots:
         points = parse_copernicus_netcdf(final_file, spot.latitude, spot.longitude, cfg.variable_map or REQUIRED_VARIABLE_MAP, PROVIDER)
         for point in points:
             if start <= point.timestamp <= end:
                 db.add(MarineForecast(provider_fetch_id=fetch.id, provider_name=PROVIDER, spot_id=spot.id, forecast_time=point.timestamp, fetched_at=now, values=point.values, provider_status='healthy'))
+                ledger_points.append(_ledger_point_from_copernicus(spot.id, point))
                 inserted += 1
     fetch.status = 'healthy'
     fetch.raw_response = {**(fetch.raw_response or {}), 'raw_file': str(final_file), 'download_size': validation['size'], 'checksum': checksum, 'normalized_records': inserted}
@@ -338,6 +363,23 @@ async def ingest_job(db: Session, job: CopernicusIngestionJob) -> dict[str, Any]
     pub.ingestion_completed_at = now
     pub.updated_at = now
     pub.metadata_json = {**(pub.metadata_json or {}), **validation, 'temporal_bounds': [start.isoformat(), end.isoformat()], 'download_duration_seconds': round((now - started).total_seconds(), 1), 'normalized_records': inserted}
+    if ledger_writes_enabled():
+        try:
+            ledger_identity = build_copernicus_publication_identity(cfg.product_id, cfg.dataset_id, pub.model_cycle_time, pub.latest_available_forecast_time, pub.metadata_json)
+            ledger_result = write_provider_ledger(
+                db,
+                ProviderPublicationDescriptor(provider_name=PROVIDER, product_id=cfg.product_id, dataset_id=cfg.dataset_id, publication_identity=ledger_identity, model_cycle_at=pub.model_cycle_time, source_updated_at=pub.updated_at, latest_valid_at=pub.latest_available_forecast_time, detected_at=pub.detected_at, metadata={'legacy_publication_id': pub.id, **(pub.metadata_json or {})}),
+                ProviderFetchDescriptor(started_at=started, completed_at=now, status='healthy', download_size_bytes=validation['size'], payload_checksum=checksum, raw_payload_path=str(final_file), metadata={'legacy_provider_fetch_id': fetch.id, 'legacy_job_id': job.id}),
+                ForecastRunDescriptor(issued_at=pub.model_cycle_time or start, fetched_at=now, normalized_at=now, geographic_bounds={'bbox': bbox}, temporal_bounds={'start': start.isoformat(), 'end': end.isoformat()}, normalizer_version='copernicus-netcdf-normalizer-v1', normalizer_configuration_hash=hashlib.sha256(json.dumps(cfg.variable_map or REQUIRED_VARIABLE_MAP, sort_keys=True).encode()).hexdigest()),
+                ledger_points,
+            )
+            fetch.metadata_json = {**(fetch.metadata_json or {}), 'ledger_write': ledger_result.__dict__}
+        except Exception as exc:
+            mark_ledger_failure(db, fetch.id, str(exc), {'stage': 'copernicus_dual_write', 'legacy_job_id': job.id})
+            job.status = 'ledger_failed'
+            job.last_error = redact(str(exc))[:2000]
+            pub.status = 'ledger_failed'
+            raise
     job.status = 'succeeded'
     job.completed_at = now
     job.updated_at = now

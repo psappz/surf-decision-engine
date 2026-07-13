@@ -2,7 +2,7 @@
 
 Copernicus `GLOBAL_ANALYSISFORECAST_WAV_001_027` publishes around the 00:00 UTC and 12:00 UTC cycles. The dataset has three-hour forecast resolution, but new source data are not published every three hours.
 
-WaveWatch uses publication-aware scheduling:
+Surf Decision Engine uses publication-aware scheduling:
 
 ```cron
 SHELL=/bin/bash
