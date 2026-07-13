@@ -101,3 +101,8 @@ Current runtime tables and read paths remain in place:
 - current scoring still writes current score/recommendation tables;
 - current pages still read current tables;
 - no provider job is dual-writing yet.
+
+
+## Consensus Engine shadow mode
+
+PR #3 adds a versioned, append-only Consensus Engine in shadow mode. It reads immutable Forecast Ledger provider points and writes `consensus_runs` / `consensus_forecast_points`; current UI, runtime forecasts and recommendations remain unchanged. See `docs/consensus-engine.md` and `docs/consensus-operations.md`.
