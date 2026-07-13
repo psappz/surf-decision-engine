@@ -212,7 +212,11 @@ class SpotAssessmentPoint(Base):
 class SpotScoreRun(Base):
     __tablename__ = 'spot_score_runs'
     __table_args__ = (
-        UniqueConstraint('assessment_run_id', 'scoring_engine_version', 'scoring_configuration_hash', 'surfer_profile_version', 'surfer_profile_hash', name='uq_score_run_input_version'),
+        UniqueConstraint('assessment_run_id', 'scoring_engine_version', 'scoring_configuration_hash', 'surfer_profile_version', 'surfer_profile_hash', 'calculation_scope_hash', 'recalculation_sequence', name='uq_score_run_input_scope_sequence'),
+        CheckConstraint('recalculation_sequence >= 0', name='ck_score_run_sequence_nonnegative'),
+        Index('ix_spot_score_runs_assessment_run_id', 'assessment_run_id'),
+        Index('ix_spot_score_runs_status', 'status'),
+        Index('ix_score_run_equivalence', 'assessment_run_id', 'scoring_engine_version', 'scoring_configuration_hash', 'surfer_profile_version', 'surfer_profile_hash', 'calculation_scope_hash'),
     )
     id: Mapped[int] = mapped_column(primary_key=True)
     assessment_run_id: Mapped[int] = mapped_column(ForeignKey('spot_assessment_runs.id', ondelete='RESTRICT'), nullable=False)
@@ -221,6 +225,8 @@ class SpotScoreRun(Base):
     scoring_configuration_hash: Mapped[str] = mapped_column(String(128), nullable=False)
     surfer_profile_version: Mapped[str] = mapped_column(String(80), nullable=False)
     surfer_profile_hash: Mapped[str] = mapped_column(String(128), nullable=False)
+    calculation_scope_hash: Mapped[str] = mapped_column(String(128), nullable=False, default='legacy-unscoped')
+    recalculation_sequence: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     status: Mapped[str] = mapped_column(String(40), nullable=False)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     metadata_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
@@ -231,14 +237,27 @@ class SpotScoreSnapshot(Base):
     __tablename__ = 'spot_score_snapshots'
     __table_args__ = (
         UniqueConstraint('score_run_id', 'spot_id', 'valid_at', name='uq_score_snapshot_run_spot_valid'),
-        CheckConstraint('total_score IS NULL OR (total_score >= 0 AND total_score <= 100)', name='ck_score_snapshot_total_range'),
+        UniqueConstraint('score_run_id', 'assessment_point_id', name='uq_score_snapshot_run_assessment_point'),
+        CheckConstraint('total_score >= 0 AND total_score <= 100', name='ck_score_snapshot_total_score_range'),
+        CheckConstraint('swell_direction_score IS NULL OR (swell_direction_score >= 0 AND swell_direction_score <= 100)', name='ck_score_snapshot_swell_direction_score_range'),
+        CheckConstraint('swell_height_score IS NULL OR (swell_height_score >= 0 AND swell_height_score <= 100)', name='ck_score_snapshot_swell_height_score_range'),
+        CheckConstraint('period_score IS NULL OR (period_score >= 0 AND period_score <= 100)', name='ck_score_snapshot_period_score_range'),
+        CheckConstraint('wind_direction_score IS NULL OR (wind_direction_score >= 0 AND wind_direction_score <= 100)', name='ck_score_snapshot_wind_direction_score_range'),
+        CheckConstraint('wind_speed_score IS NULL OR (wind_speed_score >= 0 AND wind_speed_score <= 100)', name='ck_score_snapshot_wind_speed_score_range'),
+        CheckConstraint('tide_score IS NULL OR (tide_score >= 0 AND tide_score <= 100)', name='ck_score_snapshot_tide_score_range'),
+        CheckConstraint('safety_score IS NULL OR (safety_score >= 0 AND safety_score <= 100)', name='ck_score_snapshot_safety_score_range'),
+        CheckConstraint('penalty_total IS NULL OR penalty_total >= 0', name='ck_score_snapshot_penalty_nonnegative'),
+        Index('ix_spot_score_snapshots_run', 'score_run_id'),
+        Index('ix_spot_score_snapshots_assessment_point', 'assessment_point_id'),
+        Index('ix_spot_score_snapshots_spot_valid', 'spot_id', 'valid_at'),
     )
     id: Mapped[int] = mapped_column(primary_key=True)
     score_run_id: Mapped[int] = mapped_column(ForeignKey('spot_score_runs.id', ondelete='RESTRICT'), nullable=False)
+    assessment_point_id: Mapped[int] = mapped_column(ForeignKey('spot_assessment_points.id', ondelete='RESTRICT'), nullable=False)
     spot_id: Mapped[int] = mapped_column(ForeignKey('surf_spots.id', ondelete='RESTRICT'), nullable=False)
     valid_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    total_score: Mapped[float | None] = mapped_column(Float, nullable=True)
-    condition_classification: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    total_score: Mapped[float] = mapped_column(Float, nullable=False)
+    condition_classification: Mapped[str] = mapped_column(String(80), nullable=False)
     swell_direction_score: Mapped[float | None] = mapped_column(Float, nullable=True)
     swell_height_score: Mapped[float | None] = mapped_column(Float, nullable=True)
     period_score: Mapped[float | None] = mapped_column(Float, nullable=True)

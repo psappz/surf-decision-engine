@@ -90,3 +90,7 @@ PR #3 adds a versioned, append-only Consensus Engine in shadow mode. It reads im
 ## Spot Intelligence shadow mode
 
 PR #4 implements the Spot Intelligence calculation in manual shadow mode. It consumes only completed Consensus points, snapshots exact spot rules, and writes model-derived assessments. Provisional breaking-wave ranges are not observed/live. Ranking, scoring, recommendations, final confidence, UI migration, and scheduling remain out of scope. See `docs/spot-intelligence.md`.
+
+## Spot Scoring foundation
+
+PR #5 Slice 1 hardens the append-only Recommendation Engine storage and repository boundary. A score run consumes one completed Spot Assessment run; each score snapshot references its exact assessment point. Scope hashes and attempt sequences allow auditable retries without overwriting prior history. This slice defines canonical scoring-configuration and surfer-profile provenance only: it does **not** implement a total-score formula, classifications, ranking, recommendations, runtime hooks, UI reads, or scheduling. See `docs/spot-scoring-audit.md`.

@@ -220,6 +220,7 @@ def test_derived_snapshots_and_recommendations_are_append_only(db_session):
         create_spot_assessment_run,
         mark_spot_assessment_run_status,
         create_spot_score_run,
+        mark_spot_score_run_status,
         create_spot_score_snapshots,
         list_recommendation_versions,
     )
@@ -233,10 +234,11 @@ def test_derived_snapshots_and_recommendations_are_append_only(db_session):
         create_consensus_points(db, [{'consensus_run_id': c2.id, 'spot_id': spot_id, 'valid_at': valid, 'wave_height': 1.6, 'provider_count': 2}])
         mark_consensus_run_status(db, c2.id, 'completed')
         ar = create_spot_assessment_run(db, consensus_run_id=c1.id, calculated_at=_now(), spot_rules_version='rules-v1', spot_rules_hash='hash1', spot_intelligence_engine_version='spot-v1', configuration_hash='spot-engine-cfg', status='running')
-        create_spot_assessment_points(db, [{'assessment_run_id': ar.id, 'spot_id': spot_id, 'valid_at': valid, 'breaking_wave_min': 0.8, 'breaking_wave_max': 1.3}])
+        assessment_point = create_spot_assessment_points(db, [{'assessment_run_id': ar.id, 'spot_id': spot_id, 'valid_at': valid, 'breaking_wave_min': 0.8, 'breaking_wave_max': 1.3}])[0]
         mark_spot_assessment_run_status(db, ar.id, 'completed')
-        sr = create_spot_score_run(db, assessment_run_id=ar.id, calculated_at=_now(), scoring_engine_version='score-v1', scoring_configuration_hash='score-cfg', surfer_profile_version='profile-v1', surfer_profile_hash='profile-hash', status='succeeded')
-        create_spot_score_snapshots(db, [{'score_run_id': sr.id, 'spot_id': spot_id, 'valid_at': valid, 'total_score': 82, 'condition_classification': 'go'}])
+        sr = create_spot_score_run(db, assessment_run_id=ar.id, calculated_at=_now(), scoring_engine_version='score-v1', scoring_configuration_hash='score-cfg', surfer_profile_version='profile-v1', surfer_profile_hash='profile-hash', status='running')
+        create_spot_score_snapshots(db, [{'score_run_id': sr.id, 'assessment_point_id': assessment_point.id, 'spot_id': spot_id, 'valid_at': valid, 'total_score': 82, 'condition_classification': 'go'}])
+        mark_spot_score_run_status(db, sr.id, 'completed')
         cr = create_confidence_run(db, calculated_at=_now(), forecast_cutoff_at=_now(), confidence_engine_version='conf-v1', configuration_hash='conf-cfg', status='succeeded')
         create_confidence_snapshots(db, [{'confidence_run_id': cr.id, 'spot_id': spot_id, 'valid_at': valid, 'confidence_score': 74, 'confidence_label': 'medium', 'reasons_json': ['test']}])
         create_recommendation_snapshot(db, recommendation_date=date(2026, 7, 13), daypart='morning', generated_at=_now(), recommended_spot_id=spot_id, recommended_zone='zone-a', score=82, confidence_score=74, confidence_label='medium', forecast_cutoff_at=_now(), consensus_run_id=c1.id, assessment_run_id=ar.id, score_run_id=sr.id, confidence_run_id=cr.id)

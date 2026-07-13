@@ -58,6 +58,8 @@ PR #4 persists the canonical rule snapshot and calculation scope in bounded run 
 
 Score snapshots are immutable outputs of that scoring run. The profile hash captures the exact profile configuration when the same human-readable profile version is edited or externalized.
 
+PR #5 Slice 1 adds `calculation_scope_hash` and nonnegative `recalculation_sequence`. Run identity is the assessment input plus engine/configuration/profile identities, canonical point scope, and attempt sequence. The configuration and profile hashes contain only canonical effective behavioral values; engine/profile versions and names remain separate identity metadata. Calculation code must consume the same `effective_values()` returned to hashing. Every score snapshot records a restrictive `assessment_point_id` provenance reference. No score formula or scoring policy is introduced in this slice.
+
 ## Confidence versioning
 
 `confidence_runs` stores:
