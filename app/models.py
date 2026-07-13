@@ -11,7 +11,9 @@ class SurfSpot(Base):
     @property
     def maps_url(self): return f"https://www.google.com/maps/search/?api=1&query={self.latitude},{self.longitude}"
 class ProviderFetch(Base):
-    __tablename__='provider_fetches'; id:Mapped[int]=mapped_column(primary_key=True); provider_name:Mapped[str]=mapped_column(String(100),index=True); fetched_at:Mapped[datetime]=mapped_column(DateTime(timezone=True),index=True); latitude:Mapped[float|None]=mapped_column(Float); longitude:Mapped[float|None]=mapped_column(Float); status:Mapped[str]=mapped_column(String(30)); raw_response:Mapped[dict|None]=mapped_column(JSON); parsing_errors:Mapped[str|None]=mapped_column(Text); data_age_seconds:Mapped[int|None]=mapped_column(Integer)
+    __tablename__='provider_fetches'; __table_args__=(UniqueConstraint('publication_id','attempt_number',name='uq_provider_fetch_publication_attempt'),)
+    id:Mapped[int]=mapped_column(primary_key=True); provider_name:Mapped[str]=mapped_column(String(100),index=True); fetched_at:Mapped[datetime]=mapped_column(DateTime(timezone=True),index=True); latitude:Mapped[float|None]=mapped_column(Float); longitude:Mapped[float|None]=mapped_column(Float); status:Mapped[str]=mapped_column(String(30)); raw_response:Mapped[dict|None]=mapped_column(JSON); parsing_errors:Mapped[str|None]=mapped_column(Text); data_age_seconds:Mapped[int|None]=mapped_column(Integer)
+    publication_id:Mapped[int|None]=mapped_column(ForeignKey('provider_publications.id'),nullable=True,index=True); started_at:Mapped[datetime|None]=mapped_column(DateTime(timezone=True),nullable=True); completed_at:Mapped[datetime|None]=mapped_column(DateTime(timezone=True),nullable=True); attempt_number:Mapped[int|None]=mapped_column(Integer,nullable=True); download_size_bytes:Mapped[int|None]=mapped_column(BigInteger,nullable=True); payload_checksum:Mapped[str|None]=mapped_column(String(128),nullable=True); raw_payload_path:Mapped[str|None]=mapped_column(String(800),nullable=True); raw_file_deleted_at:Mapped[datetime|None]=mapped_column(DateTime(timezone=True),nullable=True); normalized_records_count:Mapped[int|None]=mapped_column(Integer,nullable=True); error_code:Mapped[str|None]=mapped_column(String(120),nullable=True); error_message:Mapped[str|None]=mapped_column(Text,nullable=True); metadata_json:Mapped[dict|None]=mapped_column(JSON,nullable=True); created_at:Mapped[datetime|None]=mapped_column(DateTime(timezone=True),nullable=True); updated_at:Mapped[datetime|None]=mapped_column(DateTime(timezone=True),nullable=True)
 class MarineForecast(Base):
     __tablename__='marine_forecasts'; id:Mapped[int]=mapped_column(primary_key=True); provider_fetch_id:Mapped[int|None]=mapped_column(ForeignKey('provider_fetches.id')); provider_name:Mapped[str|None]=mapped_column(String(100),index=True); spot_id:Mapped[int|None]=mapped_column(ForeignKey('surf_spots.id'),index=True); forecast_time:Mapped[datetime|None]=mapped_column(DateTime(timezone=True),index=True); fetched_at:Mapped[datetime|None]=mapped_column(DateTime(timezone=True),index=True); values:Mapped[dict]=mapped_column(JSON); provider_status:Mapped[str]=mapped_column(String(30))
 class WeatherForecast(Base):
@@ -128,3 +130,15 @@ class CopernicusIngestionJob(Base):
     started_at:Mapped[datetime|None]=mapped_column(DateTime(timezone=True),nullable=True)
     completed_at:Mapped[datetime|None]=mapped_column(DateTime(timezone=True),nullable=True)
     publication=relationship('CopernicusPublication')
+
+# Import or reload append-only forecast ledger models so Base.metadata includes
+# them for Alembic and local test databases. Existing tests reload app.models with
+# a fresh in-memory Base, so the sidecar model module must be rebound to the
+# current Base instead of retaining an earlier metadata object.
+import importlib as _importlib  # noqa: E402
+import sys as _sys  # noqa: E402
+_mod = _sys.modules.get('app.forecast_ledger_models')
+if _mod is not None and hasattr(_mod, 'ProviderPublication'):
+    _importlib.reload(_mod)
+elif _mod is None:
+    from . import forecast_ledger_models as _forecast_ledger_models  # noqa: E402,F401
