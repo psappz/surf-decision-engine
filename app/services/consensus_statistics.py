@@ -6,30 +6,14 @@ from datetime import UTC, datetime
 from statistics import median
 from typing import Any
 
-from .consensus_configuration import ConsensusConfiguration, DIRECTION_FIELDS
-
-
-def clamp(value: float, minimum: float = 0.0, maximum: float = 1.0) -> float:
-    return max(minimum, min(maximum, value))
-
-
-def to_utc(value: datetime) -> datetime:
-    return value.astimezone(UTC) if value.tzinfo else value.replace(tzinfo=UTC)
-
-
-def linear_decay(age_hours: float, full_until_hours: float, zero_at_hours: float) -> float:
-    if age_hours <= full_until_hours:
-        return 1.0
-    if age_hours >= zero_at_hours:
-        return 0.0
-    return clamp(1.0 - ((age_hours - full_until_hours) / (zero_at_hours - full_until_hours)))
+from .consensus_configuration import ConsensusConfiguration, LinearDecay
 
 
 @dataclass(frozen=True)
 class WeightedValue:
     provider_name: str
     value: float
-    weight: float
+    effective_weight: float
     provenance: dict[str, Any]
 
 
@@ -44,134 +28,161 @@ class FieldConsensus:
     warning: str | None = None
 
 
-def normalize_direction(value: float) -> float:
-    return float(value % 360.0)
+def to_utc(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)
 
 
-def validate_value(field: str, value: Any) -> tuple[float | None, str | None]:
+def linear_decay(age_hours: float, policy: LinearDecay) -> float:
+    age = max(0.0, float(age_hours))
+    if age <= policy.full_until_hours:
+        return 1.0
+    if age >= policy.zero_at_hours:
+        return 0.0
+    return (policy.zero_at_hours - age) / (policy.zero_at_hours - policy.full_until_hours)
+
+
+def validate_value(field: str, value: Any, direction_fields: tuple[str, ...]) -> tuple[float | None, str | None]:
     if value is None:
         return None, 'missing'
     try:
         number = float(value)
     except (TypeError, ValueError):
-        return None, 'not_numeric'
-    if math.isnan(number) or math.isinf(number):
-        return None, 'not_finite'
-    if field in DIRECTION_FIELDS:
-        return normalize_direction(number), None
+        return None, 'non_numeric'
+    if not math.isfinite(number):
+        return None, 'nonfinite'
+    if field in direction_fields:
+        return number % 360.0, None
     if field in {'wave_height', 'swell_wave_height', 'wind_wave_height', 'wave_period', 'swell_wave_period', 'wind_wave_period', 'wind_speed', 'wind_gust', 'current_speed'} and number < 0:
-        return None, 'negative_value'
+        return None, 'negative'
     return number, None
 
 
-def quality_adjustment(flags: dict | None, field: str, cfg: ConsensusConfiguration) -> tuple[float, list[str]]:
-    if not flags:
+def quality_adjustment(flags: dict[str, Any] | None, field: str, configuration: ConsensusConfiguration) -> tuple[float, list[str]]:
+    if not isinstance(flags, dict):
         return 1.0, []
+    matched: list[Any] = []
+    if field in flags:
+        matched.append(flags[field])
+    for key in sorted(flags, key=str):
+        if key == field:
+            continue
+        if str(key).startswith(f'{field}.') or str(key).startswith(f'{field}_'):
+            matched.append(flags[key])
     reasons: list[str] = []
     factor = 1.0
-    candidates = []
-    if field in flags:
-        candidates.append(flags[field])
-    for key, val in flags.items():
-        if key == field or key.startswith(field + '.') or key.startswith(field + '_'):
-            candidates.append(val)
-    for raw in candidates:
-        vals = raw if isinstance(raw, list) else [raw]
-        for v in vals:
-            reason = str(v)
+    for raw in matched:
+        entries = raw if isinstance(raw, (list, tuple, set)) else [raw]
+        for entry in entries:
+            reason = str(entry)
             reasons.append(reason)
-            factor *= float(cfg.quality_flag_adjustments.get(reason, 1.0))
-    return clamp(factor), reasons
+            factor *= float(configuration.quality_flag_adjustments.get(reason, 1.0))
+    return max(0.0, min(1.0, factor)), reasons
 
 
-def freshness_factor(forecast_cutoff_at: datetime, issued_at: datetime, fetched_at: datetime, valid_at: datetime, cfg: ConsensusConfiguration) -> tuple[float, dict[str, float]]:
-    cutoff = to_utc(forecast_cutoff_at); issued = to_utc(issued_at); fetched = to_utc(fetched_at); valid = to_utc(valid_at)
-    source_age_hours = max(0.0, (cutoff - fetched).total_seconds() / 3600.0)
-    model_cycle_age_hours = max(0.0, (cutoff - issued).total_seconds() / 3600.0)
-    horizon_hours = max(0.0, (valid - issued).total_seconds() / 3600.0)
-    source = linear_decay(source_age_hours, cfg.source_age_decay.full_until_hours, cfg.source_age_decay.zero_at_hours)
-    model = linear_decay(model_cycle_age_hours, cfg.model_cycle_decay.full_until_hours, cfg.model_cycle_decay.zero_at_hours)
-    horizon = linear_decay(horizon_hours, cfg.forecast_horizon_decay.full_until_hours, cfg.forecast_horizon_decay.zero_at_hours)
-    return clamp(source * model * horizon), {'source_age_hours': source_age_hours, 'model_cycle_age_hours': model_cycle_age_hours, 'forecast_horizon_hours': horizon_hours, 'source_age_factor': source, 'model_cycle_factor': model, 'forecast_horizon_factor': horizon}
+def freshness_factor(cutoff: datetime, issued_at: datetime, fetched_at: datetime, valid_at: datetime, configuration: ConsensusConfiguration) -> tuple[float, dict[str, float]]:
+    cutoff, issued, fetched, valid = map(to_utc, (cutoff, issued_at, fetched_at, valid_at))
+    source_age = max(0.0, (cutoff - fetched).total_seconds() / 3600.0)
+    cycle_age = max(0.0, (cutoff - issued).total_seconds() / 3600.0)
+    horizon = max(0.0, (valid - issued).total_seconds() / 3600.0)
+    source = linear_decay(source_age, configuration.source_age_decay)
+    cycle = linear_decay(cycle_age, configuration.model_cycle_decay)
+    horizon_factor = linear_decay(horizon, configuration.forecast_horizon_decay)
+    return source * cycle * horizon_factor, {'source_age_hours': source_age, 'model_cycle_age_hours': cycle_age, 'forecast_horizon_hours': horizon, 'source_age_factor': source, 'model_cycle_factor': cycle, 'forecast_horizon_factor': horizon_factor}
 
 
-def scalar_consensus(field: str, values: list[WeightedValue], cfg: ConsensusConfiguration) -> FieldConsensus:
-    if not values:
-        return FieldConsensus(None, 0.0, 0.0, 0.0, (), (), 'no_eligible_inputs')
-    center = _weighted_median([(v.value, v.weight) for v in values])
-    threshold = cfg.outlier_thresholds.get(field)
-    final: list[WeightedValue] = []
-    excluded: list[dict[str, Any]] = []
-    for v in values:
-        adjusted_weight = v.weight
-        reason = None
-        if threshold is not None and len(values) >= cfg.outlier_policy.minimum_provider_count_for_exclusion and abs(v.value - center) > threshold:
-            reason = f'outlier_deviation_gt_{threshold:g}'
-            if cfg.outlier_policy.mode == 'exclude':
-                p = dict(v.provenance); p.update({'excluded': True, 'exclusion_reason': reason})
-                excluded.append(p); continue
-            adjusted_weight *= cfg.outlier_policy.downweight_factor
-        p = dict(v.provenance); p.update({'effective_weight': adjusted_weight, 'excluded': False, 'exclusion_reason': reason})
-        final.append(WeightedValue(v.provider_name, v.value, adjusted_weight, p))
-    if not final or sum(v.weight for v in final) <= 0:
-        return FieldConsensus(None, 0.0, _avg([v.provenance.get('freshness_factor', 0) for v in values]), _avg([v.provenance.get('spatial_relevance_factor', 0) for v in values]), tuple(v.provenance for v in values), tuple(excluded), 'zero_effective_weight')
-    result = sum(v.value * v.weight for v in final) / sum(v.weight for v in final)
-    dev = sum(abs(v.value - result) * v.weight for v in final) / sum(v.weight for v in final)
-    agreement = _agreement_score(field, dev, cfg)
-    return FieldConsensus(result, agreement, _weighted_average_meta(final, 'freshness_factor'), _weighted_average_meta(final, 'spatial_relevance_factor'), tuple(v.provenance for v in final), tuple(excluded), None)
+def scalar_consensus(field: str, values: list[WeightedValue], configuration: ConsensusConfiguration) -> FieldConsensus:
+    minimum = configuration.minimum_providers_per_field.get(field, 1)
+    providers = {item.provider_name for item in values if item.effective_weight > 0}
+    if len(providers) < minimum:
+        excluded = tuple(_insufficient(item, minimum, len(providers)) for item in values)
+        return FieldConsensus(None, 0.0, _weighted_component(values, 'freshness_factor'), _weighted_component(values, 'spatial_relevance_factor'), (), excluded, 'insufficient_distinct_providers')
+    active = [item for item in values if item.effective_weight > 0]
+    if not active:
+        return FieldConsensus(None, 0.0, 0.0, 0.0, (), (), 'no_eligible_values')
+    center = _weighted_median(active)
+    threshold = configuration.outlier_thresholds.get(field, math.inf)
+    adjusted: list[tuple[WeightedValue, float, str | None]] = []
+    distinct_count = len({item.provider_name for item in active})
+    for item in active:
+        weight = item.effective_weight
+        adjustment = None
+        if distinct_count >= configuration.outlier_policy.minimum_provider_count_for_exclusion and abs(item.value - center) > threshold:
+            adjustment = 'robust_outlier'
+            weight = 0.0 if configuration.outlier_policy.mode == 'exclude' else weight * configuration.outlier_policy.downweight_factor
+        adjusted.append((item, weight, adjustment))
+    surviving = [(item, weight, reason) for item, weight, reason in adjusted if weight > 0]
+    removed = [(item, weight, reason) for item, weight, reason in adjusted if weight <= 0]
+    surviving_providers = {item.provider_name for item, _, _ in surviving}
+    if len(surviving_providers) < minimum:
+        excluded = tuple(
+            {**item.provenance, 'value': item.value, 'effective_weight': 0.0, 'excluded': True, 'exclusion_reason': reason or 'insufficient_distinct_providers', 'required_provider_count': minimum, 'actual_provider_count': len(surviving_providers)}
+            for item, _, reason in adjusted
+        )
+        return FieldConsensus(None, 0.0, 0.0, 0.0, (), excluded, 'insufficient_distinct_providers')
+    denominator = sum(weight for _, weight, _ in surviving)
+    if denominator <= 0:
+        excluded = tuple({**item.provenance, 'value': item.value, 'effective_weight': 0.0, 'excluded': True, 'exclusion_reason': reason or 'zero_effective_weight'} for item, _, reason in adjusted)
+        return FieldConsensus(None, 0.0, 0.0, 0.0, (), excluded, 'no_weight_after_outlier_policy')
+    result = sum(item.value * weight for item, weight, _ in surviving) / denominator
+    contributors = tuple({**item.provenance, 'value': item.value, 'effective_weight': weight, 'excluded': False, 'adjustment_reason': reason} for item, weight, reason in surviving)
+    excluded = tuple({**item.provenance, 'value': item.value, 'effective_weight': 0.0, 'excluded': True, 'exclusion_reason': reason or 'zero_effective_weight', 'adjustment_reason': reason} for item, _, reason in removed)
+    weighted_active = [WeightedValue(item.provider_name, item.value, weight, item.provenance) for item, weight, _ in surviving]
+    agreement = _scalar_agreement(field, [item.value for item, _, _ in surviving], configuration)
+    return FieldConsensus(result, agreement, _weighted_component(weighted_active, 'freshness_factor'), _weighted_component(weighted_active, 'spatial_relevance_factor'), contributors, excluded)
 
 
-def direction_consensus(field: str, values: list[WeightedValue], cfg: ConsensusConfiguration) -> FieldConsensus:
-    if not values:
-        return FieldConsensus(None, 0.0, 0.0, 0.0, (), (), 'no_eligible_inputs')
-    total_weight = sum(v.weight for v in values)
-    if total_weight <= 0:
-        return FieldConsensus(None, 0.0, 0.0, 0.0, tuple(v.provenance for v in values), (), 'zero_effective_weight')
-    x = sum(math.cos(math.radians(v.value)) * v.weight for v in values)
-    y = sum(math.sin(math.radians(v.value)) * v.weight for v in values)
-    magnitude = math.hypot(x, y) / total_weight
-    contributors = []
-    for v in values:
-        p = dict(v.provenance); p.update({'effective_weight': v.weight, 'excluded': False, 'resultant_vector_magnitude': magnitude})
-        contributors.append(p)
-    if magnitude < cfg.direction_vector_minimum_magnitude:
-        return FieldConsensus(None, magnitude * 100.0, _weighted_average_meta(values, 'freshness_factor'), _weighted_average_meta(values, 'spatial_relevance_factor'), tuple(contributors), (), 'directional_cancellation')
-    direction = normalize_direction(math.degrees(math.atan2(y, x)))
-    return FieldConsensus(direction, magnitude * 100.0, _weighted_average_meta(values, 'freshness_factor'), _weighted_average_meta(values, 'spatial_relevance_factor'), tuple(contributors), (), None)
+def direction_consensus(field: str, values: list[WeightedValue], configuration: ConsensusConfiguration) -> FieldConsensus:
+    minimum = configuration.minimum_providers_per_field.get(field, 1)
+    active = [item for item in values if item.effective_weight > 0]
+    providers = {item.provider_name for item in active}
+    if len(providers) < minimum:
+        excluded = tuple(_insufficient(item, minimum, len(providers)) for item in active)
+        return FieldConsensus(None, 0.0, _weighted_component(active, 'freshness_factor'), _weighted_component(active, 'spatial_relevance_factor'), (), excluded, 'insufficient_distinct_providers')
+    denominator = sum(item.effective_weight for item in active)
+    if denominator <= 0:
+        return FieldConsensus(None, 0.0, 0.0, 0.0, (), (), 'no_eligible_values')
+    x = sum(math.cos(math.radians(item.value % 360.0)) * item.effective_weight for item in active)
+    y = sum(math.sin(math.radians(item.value % 360.0)) * item.effective_weight for item in active)
+    magnitude = math.hypot(x, y) / denominator
+    contributors = tuple({**item.provenance, 'value': item.value % 360.0, 'effective_weight': item.effective_weight, 'excluded': False} for item in active)
+    if magnitude < configuration.direction_vector_minimum_magnitude:
+        return FieldConsensus(None, magnitude * 100.0, _weighted_component(active, 'freshness_factor'), _weighted_component(active, 'spatial_relevance_factor'), contributors, (), 'directional_cancellation')
+    direction = math.degrees(math.atan2(y, x)) % 360.0
+    return FieldConsensus(direction, magnitude * 100.0, _weighted_component(active, 'freshness_factor'), _weighted_component(active, 'spatial_relevance_factor'), contributors, ())
 
 
-def _weighted_median(values: list[tuple[float, float]]) -> float:
-    values = sorted(values, key=lambda item: item[0])
-    total = sum(w for _, w in values)
-    if total <= 0:
-        return median([v for v, _ in values])
-    acc = 0.0
-    for value, weight in values:
-        acc += weight
-        if acc >= total / 2.0:
-            return value
-    return values[-1][0]
+def _insufficient(item: WeightedValue, required: int, actual: int) -> dict[str, Any]:
+    return {**item.provenance, 'value': item.value, 'effective_weight': 0.0, 'excluded': True, 'exclusion_reason': 'insufficient_distinct_providers', 'required_provider_count': required, 'actual_provider_count': actual}
 
 
-def _agreement_score(field: str, deviation: float, cfg: ConsensusConfiguration) -> float:
-    thresholds = cfg.agreement_thresholds.get(field, {})
-    strong = thresholds.get('strong')
-    moderate = thresholds.get('moderate')
-    if strong is None or moderate is None:
-        return max(0.0, 100.0 - deviation * 10.0)
-    if deviation <= strong:
+def _weighted_median(values: list[WeightedValue]) -> float:
+    ordered = sorted(values, key=lambda item: item.value)
+    total = sum(item.effective_weight for item in ordered)
+    running = 0.0
+    for item in ordered:
+        running += item.effective_weight
+        if running >= total / 2:
+            return item.value
+    return median(item.value for item in ordered)
+
+
+def _scalar_agreement(field: str, values: list[float], configuration: ConsensusConfiguration) -> float:
+    if len(values) < 2:
         return 100.0
-    if deviation <= moderate:
-        return 70.0 + 30.0 * (moderate - deviation) / (moderate - strong)
-    return max(0.0, 70.0 * (1.0 - min(1.0, (deviation - moderate) / max(moderate, 1e-9))))
+    spread = max(values) - min(values)
+    threshold = configuration.agreement_thresholds.get(field, {'strong': 0.1, 'moderate': 1.0})
+    strong, moderate = threshold['strong'], threshold['moderate']
+    if spread <= strong:
+        return 100.0
+    if spread >= moderate:
+        return max(0.0, 50.0 * (1.0 - (spread - moderate) / max(moderate, 1e-9)))
+    return 100.0 - 50.0 * ((spread - strong) / max(moderate - strong, 1e-9))
 
 
-def _avg(values: list[float]) -> float:
-    return sum(values) / len(values) if values else 0.0
-
-
-def _weighted_average_meta(values: list[WeightedValue], key: str) -> float:
-    total = sum(v.weight for v in values)
-    if total <= 0:
+def _weighted_component(values: list[WeightedValue], name: str) -> float:
+    denominator = sum(item.effective_weight for item in values)
+    if denominator <= 0:
         return 0.0
-    return clamp(sum(float(v.provenance.get(key, 0.0)) * v.weight for v in values) / total) * 100.0
+    return 100.0 * sum(item.effective_weight * float(item.provenance.get(name, 0.0)) for item in values) / denominator

@@ -214,6 +214,7 @@ def test_derived_snapshots_and_recommendations_are_append_only(db_session):
         create_confidence_snapshots,
         create_consensus_points,
         create_consensus_run,
+        mark_consensus_run_status,
         create_recommendation_snapshot,
         create_spot_assessment_points,
         create_spot_assessment_run,
@@ -224,12 +225,12 @@ def test_derived_snapshots_and_recommendations_are_append_only(db_session):
     db = db_session
     if True:
         spot_id = _spot_id(db); valid = _now(9)
-        c1 = create_consensus_run(db, calculated_at=_now(), forecast_cutoff_at=_now(), consensus_engine_version='cons-v1', configuration_hash='cfg1', status='succeeded')
-        c2 = create_consensus_run(db, calculated_at=_now(1), forecast_cutoff_at=_now(1), consensus_engine_version='cons-v2', configuration_hash='cfg2', status='succeeded')
-        create_consensus_points(db, [
-            {'consensus_run_id': c1.id, 'spot_id': spot_id, 'valid_at': valid, 'wave_height': 1.2, 'provider_count': 1},
-            {'consensus_run_id': c2.id, 'spot_id': spot_id, 'valid_at': valid, 'wave_height': 1.6, 'provider_count': 2},
-        ])
+        c1 = create_consensus_run(db, calculated_at=_now(), forecast_cutoff_at=_now(), consensus_engine_version='cons-v1', configuration_hash='cfg1', status='running')
+        c2 = create_consensus_run(db, calculated_at=_now(1), forecast_cutoff_at=_now(1), consensus_engine_version='cons-v2', configuration_hash='cfg2', status='running')
+        create_consensus_points(db, [{'consensus_run_id': c1.id, 'spot_id': spot_id, 'valid_at': valid, 'wave_height': 1.2, 'provider_count': 1}])
+        mark_consensus_run_status(db, c1.id, 'completed')
+        create_consensus_points(db, [{'consensus_run_id': c2.id, 'spot_id': spot_id, 'valid_at': valid, 'wave_height': 1.6, 'provider_count': 2}])
+        mark_consensus_run_status(db, c2.id, 'completed')
         ar = create_spot_assessment_run(db, consensus_run_id=c1.id, calculated_at=_now(), spot_rules_version='rules-v1', spot_rules_hash='hash1', spot_intelligence_engine_version='spot-v1', configuration_hash='spot-engine-cfg', status='succeeded')
         create_spot_assessment_points(db, [{'assessment_run_id': ar.id, 'spot_id': spot_id, 'valid_at': valid, 'breaking_wave_min': 0.8, 'breaking_wave_max': 1.3}])
         sr = create_spot_score_run(db, assessment_run_id=ar.id, calculated_at=_now(), scoring_engine_version='score-v1', scoring_configuration_hash='score-cfg', surfer_profile_version='profile-v1', surfer_profile_hash='profile-hash', status='succeeded')
