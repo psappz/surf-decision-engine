@@ -1,7 +1,7 @@
 import json
 import os
 import tempfile
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import pytest
 import sqlalchemy as sa
@@ -9,7 +9,7 @@ from sqlalchemy.orm import sessionmaker
 
 from app.models import Base, SurfSpot
 from app.forecast_ledger_repository import create_fetch_attempt, create_forecast_run, create_publication, insert_forecast_points
-from app.repositories.consensus_repository import create_consensus_run, mark_consensus_run_status
+from app.repositories.consensus_repository import create_consensus_run, insert_consensus_points, mark_consensus_run_status
 from app.tools import consensus as cli
 
 
@@ -94,3 +94,33 @@ def test_cli_dry_run_force_and_explain_existing_and_missing(cli_db, capsys):
     assert payload['point']['id'] == point.id and payload['run']['status'] == 'completed'
     assert cli.main(['explain-point', '999']) == 2
     assert _json(capsys)['error'] == 'consensus_point_not_found'
+
+
+@pytest.mark.parametrize('limit', [25, 50, 100])
+def test_cli_status_preserves_requested_pagination(limit, cli_db, capsys):
+    db, _, now = cli_db
+    for index in range(100):
+        run = create_consensus_run(db, calculated_at=now, forecast_cutoff_at=now, consensus_engine_version='v', configuration_hash=f'h-{index}', status='running')
+        mark_consensus_run_status(db, run.id, 'failed')
+    db.commit()
+    assert cli.main(['status', '--limit', str(limit)]) == 0
+    payload = _json(capsys)
+    assert len(payload) == limit
+
+
+@pytest.mark.parametrize('limit', [25, 50, 100])
+def test_cli_inspect_preserves_counts_and_truncation(limit, cli_db, capsys):
+    db, spot, now = cli_db
+    run = create_consensus_run(db, calculated_at=now, forecast_cutoff_at=now, consensus_engine_version='v', configuration_hash='h', status='running')
+    rows = [
+        {'consensus_run_id': run.id, 'spot_id': spot.id, 'valid_at': now.replace(hour=0) + timedelta(hours=index), 'provider_count': 0}
+        for index in range(100)
+    ]
+    insert_consensus_points(db, rows)
+    mark_consensus_run_status(db, run.id, 'completed')
+    db.commit()
+    assert cli.main(['inspect-run', str(run.id), '--limit', str(limit)]) == 0
+    payload = _json(capsys)
+    assert payload['point_count'] == 100
+    assert payload['returned_point_count'] == limit == len(payload['points'])
+    assert payload['truncated'] is (limit < 100)

@@ -216,6 +216,26 @@ def test_exclusion_provenance_for_missing_invalid_zero_weight_quality_and_spatia
     assert all(item.get('excluded') for item in exclusions)
 
 
+def test_ordinary_contributor_and_exclusion_provenance_contract(db_session):
+    _provider_point(db_session, 'copernicus-marine', fetched_hour=6, wave_height=1.0)
+    _provider_point(db_session, 'ipma', fetched_hour=6, wave_height=2.0)
+    point = _point_for_result(db_session, ConsensusEngine(db_session).calculate(_request(db_session)))
+    field = point.calculation_details_json['fields']['wave_height']
+    contributor = field['contributors'][0]
+    exclusion = next(item for item in field['excluded'] if item['provider_name'] == 'ipma')
+    common = {
+        'provider_name', 'provider_publication_id', 'provider_fetch_id',
+        'forecast_run_id', 'forecast_point_id', 'sample_point_id', 'issued_at',
+        'fetched_at', 'normalized_at', 'point_created_at', 'valid_at',
+        'raw_value', 'base_weight', 'quality_factor', 'quality_reasons',
+        'spatial_relevance_factor', 'distance_km', 'schema_version',
+        'normalizer_version', 'normalizer_configuration_hash',
+        'interpolation_method', 'effective_weight', 'excluded',
+    }
+    assert common <= contributor.keys()
+    assert common | {'exclusion_reason'} <= exclusion.keys()
+
+
 def test_idempotency_force_and_append_only_terminal_transitions(db_session):
     _provider_point(db_session, 'copernicus-marine', fetched_hour=6, wave_height=1.0)
     request = _request(db_session)
@@ -303,6 +323,73 @@ def test_recursive_provenance_bounds_and_redaction():
         assert 'omitted_count' in encoded or 'truncated' in encoded.lower()
     finally:
         os.environ.pop('API_TOKEN', None)
+
+
+def test_malformed_coordinate_metadata_uses_unknown_spatial_fallback(db_session):
+    _, provider_point = _provider_point(db_session, 'copernicus-marine', fetched_hour=6, wave_height=1.0)
+    provider_point.raw_values_json = {'selected_latitude': {'malformed': 'x' * 5000}, 'selected_longitude': 'not-a-number'}
+    db_session.commit()
+    point = _point_for_result(db_session, ConsensusEngine(db_session).calculate(_request(db_session)))
+    contributor = point.calculation_details_json['fields']['wave_height']['contributors'][0]
+    assert contributor['distance_km'] is None
+    assert contributor['spatial_relevance_factor'] == default_consensus_configuration().spatial_relevance['unknown_factor']
+
+
+@pytest.mark.parametrize('stage', ['select_inputs', 'input_fingerprint'])
+def test_precalculation_failures_persist_exactly_one_failed_run(stage, db_session, monkeypatch):
+    import app.services.consensus_engine as engine_module
+    _provider_point(db_session, 'copernicus-marine', fetched_hour=6, wave_height=1.0)
+    secret = 'selection-secret-value'
+    monkeypatch.setenv('API_TOKEN', secret)
+    def fail(*args, **kwargs):
+        raise RuntimeError(f'token={secret}')
+    if stage == 'select_inputs':
+        monkeypatch.setattr(engine_module, 'select_consensus_inputs', fail)
+    else:
+        monkeypatch.setattr(engine_module, '_input_fingerprint', fail)
+    with pytest.raises(RuntimeError):
+        ConsensusEngine(db_session).calculate(_request(db_session))
+    runs = db_session.query(ConsensusRun).all()
+    cfg = default_consensus_configuration()
+    assert len(runs) == 1 and runs[0].status == 'failed'
+    assert runs[0].metadata_json['failure_stage'] == stage
+    assert runs[0].metadata_json['engine_version'] == cfg.engine_version
+    assert runs[0].metadata_json['configuration_hash'] == cfg.configuration_hash()
+    assert runs[0].metadata_json['request_scope']['spot_ids'] == [_spot_id(db_session)]
+    assert secret not in json.dumps(runs[0].metadata_json) + (runs[0].error_message or '')
+    assert db_session.query(ConsensusForecastPoint).count() == 0
+
+
+@pytest.mark.parametrize('stage', ['select_inputs', 'input_fingerprint'])
+def test_dry_run_precalculation_failure_is_write_free(stage, db_session, monkeypatch):
+    import app.services.consensus_engine as engine_module
+    def fail(*args, **kwargs):
+        raise RuntimeError('precalculation failed')
+    if stage == 'select_inputs':
+        monkeypatch.setattr(engine_module, 'select_consensus_inputs', fail)
+    else:
+        monkeypatch.setattr(engine_module, '_input_fingerprint', fail)
+    with pytest.raises(RuntimeError):
+        ConsensusEngine(db_session).calculate(_request(db_session, dry=True))
+    assert db_session.query(ConsensusRun).count() == 0
+
+
+def test_dry_run_after_equivalent_completed_run_is_fresh_and_write_free(db_session, monkeypatch):
+    _provider_point(db_session, 'copernicus-marine', fetched_hour=6, wave_height=1.0)
+    engine = ConsensusEngine(db_session)
+    completed = engine.calculate(_request(db_session))
+    before_runs = db_session.query(ConsensusRun).count()
+    original = ConsensusEngine._build_points
+    calls = []
+    def observed(self, *args, **kwargs):
+        calls.append(args[0])
+        return original(self, *args, **kwargs)
+    monkeypatch.setattr(ConsensusEngine, '_build_points', observed)
+    preview = engine.calculate(_request(db_session, dry=True))
+    assert completed.status == 'completed'
+    assert preview.status == 'dry_run' and preview.consensus_run_id is None
+    assert calls == [None]
+    assert db_session.query(ConsensusRun).count() == before_runs
 
 
 def test_outlier_exclusion_removes_provider_from_scores_and_provider_count(db_session):

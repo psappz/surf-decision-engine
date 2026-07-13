@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 from ..repositories.consensus_repository import create_consensus_run, find_equivalent_completed_run, insert_consensus_points, list_consensus_points_for_run, mark_consensus_run_status
 from .consensus_configuration import CONSENSUS_FIELDS, ConsensusConfiguration, default_consensus_configuration
 from .consensus_input_selector import SelectedProviderInput, SelectionResult, select_consensus_inputs
-from .consensus_safety import bounded_json, redact_text
+from .consensus_safety import bounded_json, compact_provenance, redact_text
 from .consensus_statistics import WeightedValue, direction_consensus, scalar_consensus, to_utc
 
 
@@ -51,16 +51,25 @@ class ConsensusEngine:
         started = perf_counter()
         request = _validated_request(request)
         configuration_hash = request.configuration.configuration_hash()
-        selection = select_consensus_inputs(
-            self.db,
-            cutoff=request.forecast_cutoff_at,
-            valid_from=request.valid_from,
-            valid_until=request.valid_until,
-            spot_ids=request.spot_ids,
-            configuration=request.configuration,
-        )
-        fingerprint = _input_fingerprint(request, selection, configuration_hash)
-        if not request.force_recalculation:
+        stage = 'select_inputs'
+        try:
+            selection = select_consensus_inputs(
+                self.db,
+                cutoff=request.forecast_cutoff_at,
+                valid_from=request.valid_from,
+                valid_until=request.valid_until,
+                spot_ids=request.spot_ids,
+                configuration=request.configuration,
+            )
+            stage = 'input_fingerprint'
+            fingerprint = _input_fingerprint(request, selection, configuration_hash)
+        except Exception as exc:
+            self.db.rollback()
+            if not request.dry_run:
+                self._persist_precalculation_failure(request, configuration_hash, stage, exc, started)
+            raise
+        # Dry runs are fresh previews and never consult persisted equivalents.
+        if not request.dry_run and not request.force_recalculation:
             existing = find_equivalent_completed_run(self.db, engine_version=request.engine_version, configuration_hash=configuration_hash, input_fingerprint=fingerprint)
             if existing:
                 points = list_consensus_points_for_run(self.db, existing.id)
@@ -115,6 +124,40 @@ class ConsensusEngine:
                 self.db.rollback()
             raise
 
+    def _persist_precalculation_failure(self, request: ConsensusCalculationRequest, configuration_hash: str, stage: str, exc: Exception, started: float) -> None:
+        error = _safe_error(exc)
+        metadata = bounded_json({
+            'status': 'failed',
+            'failure_stage': stage,
+            'error': error,
+            'duration_seconds': perf_counter() - started,
+            'request_scope': {
+                'forecast_cutoff_at': to_utc(request.forecast_cutoff_at).isoformat(),
+                'valid_from': to_utc(request.valid_from).isoformat(),
+                'valid_until': to_utc(request.valid_until).isoformat(),
+                'spot_ids': list(request.spot_ids) if request.spot_ids else None,
+            },
+            'trigger_reason': redact_text(request.trigger_reason, max_length=80),
+            'correlation_id': redact_text(request.correlation_id, max_length=128) if request.correlation_id else None,
+            'engine_version': request.engine_version,
+            'configuration_hash': configuration_hash,
+        }, max_bytes=16_384)
+        try:
+            run = create_consensus_run(
+                self.db,
+                calculated_at=datetime.now(UTC),
+                forecast_cutoff_at=to_utc(request.forecast_cutoff_at),
+                consensus_engine_version=request.engine_version,
+                configuration_hash=configuration_hash,
+                status='running',
+                metadata_json=metadata,
+            )
+            mark_consensus_run_status(self.db, run.id, 'failed', error_message=error, metadata_json=metadata)
+            self.db.commit()
+        except Exception:
+            self.db.rollback()
+            raise
+
     def _build_points(self, run_id: int | None, selection: SelectionResult, configuration: ConsensusConfiguration) -> list[dict[str, Any]]:
         keys = set(selection.inputs_by_spot_time_field) | set(selection.excluded_by_spot_time_field)
         spot_times = sorted({(spot_id, valid_at) for spot_id, valid_at, _ in keys})
@@ -144,8 +187,8 @@ class ConsensusEngine:
                     'agreement_score': _score(result.agreement_score),
                     'freshness_score': _score(result.freshness_score),
                     'spatial_relevance_score': _score(result.spatial_relevance_score),
-                    'contributors': list(result.contributors),
-                    'excluded': combined_excluded,
+                    'contributors': [compact_provenance(item) for item in result.contributors],
+                    'excluded': [compact_provenance(item) for item in combined_excluded],
                     'contributor_count': len(result.contributors),
                     'excluded_count': len(combined_excluded),
                     'warning': result.warning,
@@ -180,7 +223,7 @@ class ConsensusEngine:
                     'recommendation_logic_applied': False,
                     'time_alignment': 'exact_valid_at_only',
                     'spatial_relevance_score': spatial,
-                }),
+                }, max_items=64),
             })
             rows.append(row)
         return rows

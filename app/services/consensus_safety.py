@@ -11,6 +11,21 @@ _BEARER = re.compile(r"(?i)\b(bearer\s+)[A-Za-z0-9._~+/=-]+")
 _ASSIGNMENT = re.compile(r"(?i)\b(password|passwd|secret|token|api[_-]?key|authorization|credential)\s*[:=]\s*([^\s,;]+)")
 _URL_CREDENTIALS = re.compile(r"(?P<scheme>https?://)(?P<user>[^/@:\s]+):(?P<password>[^/@\s]+)@")
 
+# Stable persisted contributor/exclusion audit contract.
+PROVENANCE_KEYS = (
+    "provider_name", "provider_publication_id", "provider_fetch_id",
+    "forecast_run_id", "forecast_point_id", "sample_point_id", "issued_at",
+    "fetched_at", "normalized_at", "point_created_at", "valid_at",
+    "raw_value", "value", "base_weight", "source_age_hours",
+    "model_cycle_age_hours", "forecast_horizon_hours", "source_age_factor",
+    "model_cycle_factor", "forecast_horizon_factor", "quality_factor",
+    "quality_reasons", "spatial_relevance_factor", "distance_km",
+    "schema_version", "normalizer_version", "normalizer_configuration_hash",
+    "interpolation_method", "effective_weight", "excluded",
+    "exclusion_reason", "adjustment_reason", "required_provider_count",
+    "actual_provider_count",
+)
+
 
 def redact_text(value: Any, *, max_length: int = 1000) -> str:
     text = str(value)
@@ -60,6 +75,15 @@ def bounded_json(
             reduced["_truncated"]["omitted_keys"] += 1
         return reduced
     return {"_truncated": True, "omitted_bytes": len(encoded) - max_bytes, "type": type(value).__name__}
+
+
+def compact_provenance(value: Mapping[str, Any]) -> dict[str, Any]:
+    """Preserve contract keys while bounding nested and untrusted values."""
+    return {
+        key: _bound(value[key], depth=0, max_depth=4, max_items=12, max_string=240)
+        for key in PROVENANCE_KEYS
+        if key in value
+    }
 
 
 def _bound(value: Any, *, depth: int, max_depth: int, max_items: int, max_string: int) -> Any:

@@ -175,7 +175,16 @@ def spatial_relevance_details(spot: SurfSpot, point: ProviderForecastPoint, conf
     spatial = configuration.spatial_relevance
     if lat is None or lon is None:
         return float(spatial['unknown_factor']), None
-    distance = haversine_km(float(spot.latitude), float(spot.longitude), float(lat), float(lon))
+    try:
+        coordinates = tuple(float(value) for value in (spot.latitude, spot.longitude, lat, lon))
+        if not all(math.isfinite(value) for value in coordinates):
+            raise ValueError('nonfinite coordinate')
+        spot_lat, spot_lon, selected_lat, selected_lon = coordinates
+        if not (-90 <= selected_lat <= 90 and -180 <= selected_lon <= 180):
+            raise ValueError('coordinate outside geographic range')
+        distance = haversine_km(spot_lat, spot_lon, selected_lat, selected_lon)
+    except (TypeError, ValueError, OverflowError):
+        return float(spatial['unknown_factor']), None
     full, zero = float(spatial['full_until_km']), float(spatial['zero_at_km'])
     if distance <= full:
         return 1.0, distance

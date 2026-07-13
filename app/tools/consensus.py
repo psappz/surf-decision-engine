@@ -145,7 +145,9 @@ def _point_summary(point) -> dict:
 
 
 def _print_json(value) -> None:
-    print(json.dumps(bounded_json(value), indent=2, sort_keys=True, default=str))
+    # Commands cap result sets at 100; preserve that pagination exactly instead
+    # of applying the generic 24-item JSON limit a second time.
+    print(json.dumps(bounded_json(value, max_items=100), indent=2, sort_keys=True, default=str))
 
 
 if __name__ == '__main__':

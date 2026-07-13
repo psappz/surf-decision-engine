@@ -15,6 +15,6 @@ They reject non-running creation, arbitrary status values, terminal-run metadata
 
 Stored and CLI-rendered errors redact common credential assignments, bearer/API tokens, credential-bearing URLs, secret-keyed structures and configured secret environment values. Nested metadata/provenance is bounded by depth, collection size, string size and total serialized size while retaining truncation/omitted counts.
 
-Safe retry: rerun the same command without `--force`; an equivalent completed fingerprint is reused. Failed attempts remain immutable audit records. Use `--force` only to append a deliberate new run.
+Safe retry: rerun the same command without `--force`; an equivalent completed fingerprint is reused. Failed attempts remain audit records under the repository/service append-only policy. Use `--force` only to append a deliberate new run. This policy has no database triggers and does not claim protection from arbitrary privileged direct SQL.
 
 A stale `running` state after process death must be inspected before retry. Automatic stale-run recovery and concurrent queue-level deduplication remain future operational work.

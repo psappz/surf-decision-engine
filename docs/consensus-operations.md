@@ -22,4 +22,6 @@ The CLI rejects negative horizons, nonpositive IDs, malformed timestamps and inv
 
 `inspect-run` first resolves the run, so an existing failed or zero-point run is distinct from a nonexistent run. Inspection reports total/returned point counts and truncation. Missing run/point commands return code 2.
 
-Commands print recursively bounded, secret-redacted JSON. `--dry-run` calculates without writing. `--force` appends a deliberate new run instead of reusing an equivalent completed one.
+Commands print recursively bounded, secret-redacted JSON. Command-level result pagination is preserved up to the documented 100-row safety cap. `--dry-run` always calculates a fresh preview without looking up or writing an equivalent run. `--force` appends a deliberate new run instead of reusing an equivalent completed one.
+
+Append-only transitions are enforced by the consensus repository/service boundary only. There are no database triggers, and arbitrary privileged direct SQL is not claimed to be immutable.
