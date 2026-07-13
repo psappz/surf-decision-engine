@@ -86,6 +86,17 @@ def find_equivalent_completed_assessment(db: Session, *, consensus_run_id: int, 
     return db.scalar(stmt)
 
 
+def find_latest_equivalent_assessment(db: Session, *, consensus_run_id: int, rules_hash: str, engine_version: str, configuration_hash: str, scope_hash: str) -> SpotAssessmentRun | None:
+    stmt = select(SpotAssessmentRun).where(
+        SpotAssessmentRun.consensus_run_id == consensus_run_id,
+        SpotAssessmentRun.spot_rules_hash == rules_hash,
+        SpotAssessmentRun.spot_intelligence_engine_version == engine_version,
+        SpotAssessmentRun.configuration_hash == configuration_hash,
+        SpotAssessmentRun.calculation_scope_hash == scope_hash,
+    ).order_by(SpotAssessmentRun.recalculation_sequence.desc(), SpotAssessmentRun.id.desc()).limit(1)
+    return db.scalar(stmt)
+
+
 def next_spot_assessment_recalculation_sequence(db: Session, *, consensus_run_id: int, rules_hash: str, engine_version: str, configuration_hash: str, scope_hash: str) -> int:
     """Return the next append-only attempt sequence for equivalent inputs."""
     value = db.scalar(select(func.max(SpotAssessmentRun.recalculation_sequence)).where(

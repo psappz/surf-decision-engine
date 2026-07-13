@@ -339,6 +339,30 @@ def test_unique_insert_races_reuse_winner_or_retry_allocation_without_orphans(db
     assert db.query(SpotAssessmentRun).filter_by(status='running').count() == 0
 
 
+def test_nonforce_collision_with_running_equivalent_returns_in_progress(db):
+    import app.services.spot_intelligence_engine as module
+    run = _consensus(db)
+    engine = SpotIntelligenceEngine(db)
+    request = module._validated_request(_request(run.id))
+    points = engine._select_points(request)
+    spots = list(db.scalars(sa.select(SurfSpot).where(SurfSpot.id.in_({p.spot_id for p in points}))))
+    snapshot = build_spot_rules_snapshot(spots, version=request.configuration.spot_rules_version)
+    scope_hash = module._hash({'consensus_point_ids': [p.id for p in points]})
+    existing = create_spot_assessment_run(
+        db, consensus_run_id=run.id, calculated_at=NOW,
+        spot_rules_version=snapshot.version, spot_rules_hash=snapshot.rules_hash(),
+        spot_intelligence_engine_version=request.engine_version,
+        configuration_hash=request.configuration.configuration_hash(),
+        calculation_scope_hash=scope_hash, recalculation_sequence=0,
+        metadata_json={},
+    )
+    db.commit()
+    result = engine.calculate(_request(run.id))
+    assert result.status == 'in_progress'
+    assert result.assessment_run_id == existing.id
+    assert [(row.status, row.recalculation_sequence) for row in db.query(SpotAssessmentRun).all()] == [('running', 0)]
+
+
 def test_scope_is_exact_selected_points_and_rejects_empty_or_unmatched_spots(db):
     run = _consensus(db, points=2)
     result = SpotIntelligenceEngine(db).calculate(_request(run.id))

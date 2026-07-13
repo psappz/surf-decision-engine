@@ -17,7 +17,8 @@ from ..forecast_ledger_models import ConsensusForecastPoint, ConsensusRun
 from ..models import SurfSpot
 from ..repositories.spot_assessment_repository import (
     create_spot_assessment_points, create_spot_assessment_run,
-    find_equivalent_completed_assessment, list_spot_assessment_points_for_run,
+    find_equivalent_completed_assessment, find_latest_equivalent_assessment,
+    list_spot_assessment_points_for_run,
     mark_spot_assessment_run_status, next_spot_assessment_recalculation_sequence,
 )
 from .consensus_safety import bounded_json, redact_text
@@ -112,14 +113,15 @@ class SpotIntelligenceEngine:
                 'warnings': list(warnings),
             },
         )
-        run, winner = self._create_running_attempt(
+        run, winner, winner_status = self._create_running_attempt(
             request=request, consensus_run=consensus_run, snapshot=snapshot,
             rules_hash=rules_hash, config_hash=config_hash, scope_hash=scope_hash,
             metadata=metadata,
         )
         if winner is not None:
+            assert winner_status is not None
             existing_points = list_spot_assessment_points_for_run(self.db, winner.id)
-            return SpotAssessmentResult(winner.id, consensus_run.id, 0, len({p.spot_id for p in existing_points}), 'reused', rules_hash, config_hash, scope_hash, warnings, perf_counter() - started)
+            return SpotAssessmentResult(winner.id, consensus_run.id, 0, len({p.spot_id for p in existing_points}), winner_status, rules_hash, config_hash, scope_hash, warnings, perf_counter() - started)
         assert run is not None
         run_id = run.id
         stage = 'build_points'
@@ -164,7 +166,7 @@ class SpotIntelligenceEngine:
                     status='running', metadata_json=metadata,
                 )
                 self.db.commit()
-                return run, None
+                return run, None, None
             except IntegrityError:
                 # The unique key is the final allocator. Rollback removes the
                 # losing pending row before either reuse or a fresh sequence.
@@ -176,7 +178,16 @@ class SpotIntelligenceEngine:
                         scope_hash=scope_hash,
                     )
                     if winner is not None:
-                        return None, winner
+                        return None, winner, 'reused'
+                    latest = find_latest_equivalent_assessment(
+                        self.db, consensus_run_id=consensus_run.id, rules_hash=rules_hash,
+                        engine_version=request.engine_version, configuration_hash=config_hash,
+                        scope_hash=scope_hash,
+                    )
+                    if latest is not None and latest.status == 'running':
+                        # Preserve non-force idempotency while the equivalent
+                        # sequence-zero attempt is still in progress.
+                        return None, latest, 'in_progress'
                 sequence = None
         raise RuntimeError('could not allocate a unique spot assessment attempt after bounded retries')
 
