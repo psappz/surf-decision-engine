@@ -97,15 +97,26 @@ def test_cli_dry_run_force_and_explain_existing_and_missing(cli_db, capsys):
 
 
 @pytest.mark.parametrize('limit', [25, 50, 100])
-def test_cli_status_preserves_requested_pagination(limit, cli_db, capsys):
+def test_cli_status_preserves_metadata_heavy_pagination(limit, cli_db, capsys, monkeypatch):
     db, _, now = cli_db
+    secret = 'status-pagination-secret'
+    monkeypatch.setenv('API_TOKEN', secret)
+    metadata = {
+        'api_key': secret,
+        'heavy': [f'{index:02d}-' + ('x' * 600) for index in range(24)],
+    }
     for index in range(100):
-        run = create_consensus_run(db, calculated_at=now, forecast_cutoff_at=now, consensus_engine_version='v', configuration_hash=f'h-{index}', status='running')
+        run = create_consensus_run(db, calculated_at=now, forecast_cutoff_at=now, consensus_engine_version='v', configuration_hash=f'h-{index}', status='running', metadata_json=metadata)
         mark_consensus_run_status(db, run.id, 'failed')
     db.commit()
     assert cli.main(['status', '--limit', str(limit)]) == 0
-    payload = _json(capsys)
+    output = capsys.readouterr().out
+    payload = json.loads(output)
+    assert isinstance(payload, list)
     assert len(payload) == limit
+    assert len(output.encode()) > 131_072
+    assert len(output.encode()) <= cli.CLI_JSON_MAX_BYTES + 1  # print newline
+    assert secret not in output
 
 
 @pytest.mark.parametrize('limit', [25, 50, 100])

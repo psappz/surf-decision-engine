@@ -14,6 +14,13 @@ from ..services.consensus_engine import ConsensusCalculationRequest, ConsensusEn
 from ..services.consensus_safety import bounded_json, redact_text
 
 
+RUN_SUMMARY_MAX_BYTES = 16_384
+# Status is capped at 100 summaries. This finite aggregate bound accommodates
+# 100 individually bounded summaries, the appended point counts, and JSON
+# list/object separators without replacing a fetched page with a marker.
+CLI_JSON_MAX_BYTES = 1_650_000
+
+
 def parse_utc(value: str) -> datetime:
     parsed = datetime.fromisoformat(value.replace('Z', '+00:00'))
     if parsed.tzinfo is None:
@@ -127,7 +134,7 @@ def _run_summary(run) -> dict:
         'configuration_hash': run.configuration_hash,
         'error_message': redact_text(run.error_message, max_length=1000) if run.error_message else None,
         'metadata': run.metadata_json,
-    }, max_bytes=16_384)
+    }, max_bytes=RUN_SUMMARY_MAX_BYTES)
 
 
 def _point_summary(point) -> dict:
@@ -146,8 +153,14 @@ def _point_summary(point) -> dict:
 
 def _print_json(value) -> None:
     # Commands cap result sets at 100; preserve that pagination exactly instead
-    # of applying the generic 24-item JSON limit a second time.
-    print(json.dumps(bounded_json(value, max_items=100), indent=2, sort_keys=True, default=str))
+    # of applying the generic 24-item/128 KiB JSON limits a second time. Compact
+    # encoding also makes CLI_JSON_MAX_BYTES an actual aggregate payload bound.
+    print(json.dumps(
+        bounded_json(value, max_items=100, max_bytes=CLI_JSON_MAX_BYTES),
+        sort_keys=True,
+        separators=(',', ':'),
+        default=str,
+    ))
 
 
 if __name__ == '__main__':
