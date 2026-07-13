@@ -43,7 +43,7 @@ Recommendation Snapshots
 ### Provider Engine
 
 - `provider_publications`: generic immutable publication identity and lifecycle metadata.
-- `provider_fetches`: existing fetch table extended with nullable ledger columns for publication ownership, attempts, checksums, raw payload paths, deletion metadata, and normalized record counts.
+- `provider_fetches`: existing fetch table extended with nullable ledger columns for publication ownership, attempts, checksums, raw payload paths, deletion metadata, and normalized record counts. PR 2 dual-write support populates these fields only when `PROVIDER_LEDGER_WRITES_ENABLED=true`.
 - `forecast_runs`: one normalization run for a provider fetch and normalizer version.
 - `provider_forecast_points`: typed, run-owned provider forecast values.
 

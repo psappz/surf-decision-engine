@@ -4,7 +4,7 @@ Production URL: `https://loli.restricted.invalid`.
 
 Production path: `/opt/wavewatch/app`.
 
-WaveWatch runs behind the shared `smartfinca-caddy` reverse proxy. Do not alter DNS, do not alter unrelated Caddy routes, and do not expose new public ports.
+Surf Decision Engine runs behind the shared `smartfinca-caddy` reverse proxy. Do not alter DNS, do not alter unrelated Caddy routes, and do not expose new public ports.
 
 ## Standard deployment checklist
 
@@ -17,7 +17,7 @@ WaveWatch runs behind the shared `smartfinca-caddy` reverse proxy. Do not alter 
 7. Sync application source excluding `.env`, `.venv`, `.git`, local DB files and caches.
 8. Rebuild with `docker compose -f docker-compose.prod.yml build` or `up -d --build`.
 9. Apply Alembic migrations safely.
-10. Confirm `wavewatch-app`, `wavewatch-worker`, and `wavewatch-db` are running.
+10. Confirm `surf-decision-engine-app`, `surf-decision-engine-worker`, and `surf-decision-engine-db` are running.
 11. Run production smoke checks: `/health`, login, `/surf`, `/adm`, `/mod`, photo upload, webcam suggestion and approval.
 12. Preserve Copernicus jobs/provider integrations and `/etc/cron.d/wavewatch-copernicus`.
 
@@ -74,3 +74,7 @@ Existing users and surf spots are preserved. Deprecated generic webcam fields ar
 - Rebuild/restart with the previous compose files.
 - Preserve or restore `wavewatch_media` depending on whether uploaded photos must remain available after rollback.
 - Remove or disable `/etc/cron.d/wavewatch-copernicus` only when rolling back Copernicus scheduling itself.
+
+## PR 2 provider ledger dual-write note
+
+Surf Decision Engine provider ingestion can dual-write successful provider runs into the append-only Forecast Ledger when `PROVIDER_LEDGER_WRITES_ENABLED=true`. The default remains disabled for production-style environments. Current runtime tables, recommendations, scoring, scheduler ownership, and UI read paths remain unchanged. See `docs/provider-ledger-writes.md`, `docs/provider-data-mapping.md`, and `docs/provider-ledger-failure-recovery.md` for the PR 2 implementation details.

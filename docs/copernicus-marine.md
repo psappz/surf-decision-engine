@@ -1,8 +1,8 @@
-# Copernicus Marine WaveWatch integration
+# Copernicus Marine Surf Decision Engine integration
 
 ## Identifiers
 
-WaveWatch uses the Copernicus Marine wave product:
+Surf Decision Engine uses the Copernicus Marine wave product:
 
 - Product ID: `GLOBAL_ANALYSISFORECAST_WAV_001_027`
 - Dataset ID: `cmems_mod_glo_wav_anfc_0.083deg_PT3H-i`
@@ -11,7 +11,7 @@ The product ID is used only for catalogue inspection. The dataset ID is passed t
 
 ## Variable mapping
 
-| WaveWatch field | Copernicus variable |
+| Surf Decision Engine field | Copernicus variable |
 | --- | --- |
 | `wave_height` | `VHM0` |
 | `wave_direction` | `VMDR` |
@@ -23,7 +23,7 @@ The product ID is used only for catalogue inspection. The dataset ID is passed t
 | `wind_wave_direction` | `VMDR_WW` |
 | `wind_wave_period` | `VTM01_WW` |
 
-Core required variables are `VHM0`, `VMDR`, and `VTPK`. If any core variable is absent during catalogue inspection or NetCDF validation, WaveWatch marks Copernicus degraded/failed and preserves previous successful data.
+Core required variables are `VHM0`, `VMDR`, and `VTPK`. If any core variable is absent during catalogue inspection or NetCDF validation, Surf Decision Engine marks Copernicus degraded/failed and preserves previous successful data.
 
 ## Bounds
 
@@ -65,3 +65,7 @@ docker compose -f docker-compose.prod.yml exec -T app python -m app.tools.copern
 ```
 
 HTTP requests never call these commands and never download or parse NetCDF files.
+
+## PR 2 provider ledger dual-write note
+
+Surf Decision Engine provider ingestion can dual-write successful provider runs into the append-only Forecast Ledger when `PROVIDER_LEDGER_WRITES_ENABLED=true`. The default remains disabled for production-style environments. Current runtime tables, recommendations, scoring, scheduler ownership, and UI read paths remain unchanged. See `docs/provider-ledger-writes.md`, `docs/provider-data-mapping.md`, and `docs/provider-ledger-failure-recovery.md` for the PR 2 implementation details.

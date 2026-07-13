@@ -42,8 +42,8 @@ Cron log:
 Application logs:
 
 ```bash
-docker logs wavewatch-app
-docker logs wavewatch-worker
+docker logs surf-decision-engine-app
+docker logs surf-decision-engine-worker
 ```
 
 ## Retention
@@ -53,3 +53,7 @@ docker logs wavewatch-worker
 - Normalized DB data: retained unless a future app-level retention policy says otherwise.
 
 Never delete the raw file for the currently active successful publication.
+
+## PR 2 provider ledger dual-write note
+
+Surf Decision Engine provider ingestion can dual-write successful provider runs into the append-only Forecast Ledger when `PROVIDER_LEDGER_WRITES_ENABLED=true`. The default remains disabled for production-style environments. Current runtime tables, recommendations, scoring, scheduler ownership, and UI read paths remain unchanged. See `docs/provider-ledger-writes.md`, `docs/provider-data-mapping.md`, and `docs/provider-ledger-failure-recovery.md` for the PR 2 implementation details.

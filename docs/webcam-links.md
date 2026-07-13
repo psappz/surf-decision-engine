@@ -1,6 +1,6 @@
 # Webcam links
 
-WaveWatch stores approved surf-spot webcam links in `spot_webcams`.
+Surf Decision Engine stores approved surf-spot webcam links in `spot_webcams`.
 
 ## Operator-link-only policy
 
@@ -31,4 +31,4 @@ Approved links and user suggestions use the same safety checks:
 target="_blank" rel="noopener noreferrer"
 ```
 
-WaveWatch does not embed streams, proxy pages, cache webcam pages, show screenshots or perform automated webcam-image analysis.
+Surf Decision Engine does not embed streams, proxy pages, cache webcam pages, show screenshots or perform automated webcam-image analysis.

@@ -77,3 +77,7 @@ Storage:
 ## Current PR boundary
 
 This PR creates the storage model and repository API only. Provider ingestion, calculation engines, current-state views, analytics, history UI, backfill, and production deployment are intentionally out of scope.
+
+## PR 2 provider ledger dual-write note
+
+Surf Decision Engine provider ingestion can dual-write successful provider runs into the append-only Forecast Ledger when `PROVIDER_LEDGER_WRITES_ENABLED=true`. The default remains disabled for production-style environments. Current runtime tables, recommendations, scoring, scheduler ownership, and UI read paths remain unchanged. See `docs/provider-ledger-writes.md`, `docs/provider-data-mapping.md`, and `docs/provider-ledger-failure-recovery.md` for the PR 2 implementation details.

@@ -17,3 +17,7 @@ The prototype uses an open astronomical estimate adapter and labels tide data as
 
 ## Buoys and webcams
 Buoy observation and webcam confirmation boundaries exist for future use. The prototype does not scrape or run computer vision on third-party webcam pages.
+
+## PR 2 provider ledger dual-write note
+
+Surf Decision Engine provider ingestion can dual-write successful provider runs into the append-only Forecast Ledger when `PROVIDER_LEDGER_WRITES_ENABLED=true`. The default remains disabled for production-style environments. Current runtime tables, recommendations, scoring, scheduler ownership, and UI read paths remain unchanged. See `docs/provider-ledger-writes.md`, `docs/provider-data-mapping.md`, and `docs/provider-ledger-failure-recovery.md` for the PR 2 implementation details.

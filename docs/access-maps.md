@@ -2,7 +2,7 @@
 
 ## Why proprietary map imagery is not used
 
-WaveWatch access sketches must not use, copy, trace, screenshot, download, or visually reproduce Google Maps, Google satellite imagery, Google Street View, Apple Maps, Bing Maps, or other proprietary map products. The SVGs are intended to be reproducible vector sketches derived from legally reusable geographic data.
+Surf Decision Engine access sketches must not use, copy, trace, screenshot, download, or visually reproduce Google Maps, Google satellite imagery, Google Street View, Apple Maps, Bing Maps, or other proprietary map products. The SVGs are intended to be reproducible vector sketches derived from legally reusable geographic data.
 
 ## OpenStreetMap attribution and licensing
 
