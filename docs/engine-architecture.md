@@ -86,3 +86,7 @@ Surf Decision Engine provider ingestion can dual-write successful provider runs 
 ## Consensus Engine shadow mode
 
 PR #3 adds a versioned, append-only Consensus Engine in shadow mode. It reads immutable Forecast Ledger provider points and writes `consensus_runs` / `consensus_forecast_points`; current UI, runtime forecasts and recommendations remain unchanged. See `docs/consensus-engine.md` and `docs/consensus-operations.md`.
+
+## Spot Intelligence shadow mode
+
+PR #4 implements the Spot Intelligence calculation in manual shadow mode. It consumes only completed Consensus points, snapshots exact spot rules, and writes model-derived assessments. Provisional breaking-wave ranges are not observed/live. Ranking, scoring, recommendations, final confidence, UI migration, and scheduling remain out of scope. See `docs/spot-intelligence.md`.
