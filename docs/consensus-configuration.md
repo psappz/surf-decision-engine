@@ -2,8 +2,33 @@
 
 Default engine version: `consensus-v1`.
 
-Functional configuration is serialized canonically with sorted dictionary keys and stable float formatting, then SHA-256 hashed. Display labels and comments are excluded from the hash. Secrets are not configuration inputs.
+Functional configuration is serialized canonically with sorted dictionary keys and stable float formatting, then SHA-256 hashed. Display labels are excluded. Secrets are not configuration inputs. A request whose engine version differs from its configuration is rejected before any run is written.
 
-Configurable fields include provider weights by field, maximum provider age, maximum issue-time age, source/model/horizon linear decay, minimum providers per field, field agreement thresholds, outlier policy, direction-vector minimum magnitude, missing-value rules, field fallbacks, IPMA corroboration policy, quality flag adjustments, spatial relevance and confidence-input weights.
+## Supported hashed semantics
 
-All functional fields affect `configuration_hash`. Units are hours for age/horizon decay, minutes for time tolerance, kilometres for spatial relevance, 0–1 for factors/weights, and 0–100 for stored quality scores.
+- provider weights by provider and normalized field;
+- hard maximum provider-fetch age and model-issue age;
+- source-age, model-cycle-age and forecast-horizon decay;
+- distinct minimum providers per field;
+- scalar agreement and outlier thresholds;
+- outlier mode, factor and distinct-provider threshold;
+- configured direction fields and minimum resultant-vector magnitude;
+- unique known expected fields used for completeness;
+- quality-flag factors;
+- spatial distance thresholds and unknown-coordinate factor;
+- confidence-input component weights.
+
+Previously declared but unsupported `required_fields`, `optional_fields`, `missing_value_rules`, `field_specific_fallback_behavior` and redundant IPMA policy settings were removed from executable hashed configuration. IPMA direct hourly behavior is represented by zero field weights.
+
+## Validation
+
+Configuration validation rejects:
+
+- unknown or duplicate direction/expected fields;
+- empty expected fields;
+- negative, nonfinite or malformed weights/ages/decays;
+- unsupported outlier modes;
+- invalid spatial thresholds;
+- confidence weights that do not sum to one.
+
+Units are hours for ages/decays, kilometres for spatial relevance, 0–1 for factors/weights, and 0–100 for persisted scores. Completeness and confidence-input scores are defensively clamped to 0–100.

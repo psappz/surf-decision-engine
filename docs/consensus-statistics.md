@@ -1,6 +1,6 @@
 # Consensus statistics
 
-Scalar fields use weighted aggregation. Values are validated, quality/freshness/spatial factors adjust weights, a weighted median supplies a robust center, and extreme outliers are downweighted in v1 rather than silently discarded.
+Scalar fields use weighted aggregation. Values are validated, quality/freshness/spatial factors adjust weights, a weighted median supplies a robust center, and extreme outliers are downweighted or excluded according to configured policy. Outlier eligibility and minimum-provider rules count distinct providers, never samples.
 
 Direction fields use weighted vector averaging:
 

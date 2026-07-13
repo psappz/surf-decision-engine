@@ -8,4 +8,4 @@ Open-Meteo Marine has secondary marine weights: 0.75 total wave height/direction
 
 Open-Meteo Weather has weight 1.0 for wind speed, wind direction and wind gust.
 
-IPMA has direct hourly weight 0.0 and `corroboration_only=true`. It is not averaged into exact hourly values unless future compatible exact data exists.
+IPMA has direct hourly weight 0.0 for every field. This zero-weight configuration is the executable policy: IPMA is retained only as excluded provenance and is not averaged into exact hourly values. No separate unsupported corroboration setting is hashed.
