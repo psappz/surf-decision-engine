@@ -335,6 +335,21 @@ def test_malformed_coordinate_metadata_uses_unknown_spatial_fallback(db_session)
     assert contributor['spatial_relevance_factor'] == default_consensus_configuration().spatial_relevance['unknown_factor']
 
 
+@pytest.mark.parametrize(('latitude', 'longitude'), [(91.0, -8.865), (37.294, 181.0)])
+def test_out_of_range_spot_coordinates_use_unknown_spatial_fallback(db_session, latitude, longitude):
+    spot = db_session.query(SurfSpot).one()
+    spot.latitude = latitude
+    spot.longitude = longitude
+    _provider_point(db_session, 'copernicus-marine', fetched_hour=6, wave_height=1.0)
+    db_session.commit()
+
+    point = _point_for_result(db_session, ConsensusEngine(db_session).calculate(_request(db_session)))
+    contributor = point.calculation_details_json['fields']['wave_height']['contributors'][0]
+
+    assert contributor['distance_km'] is None
+    assert contributor['spatial_relevance_factor'] == default_consensus_configuration().spatial_relevance['unknown_factor']
+
+
 @pytest.mark.parametrize('stage', ['select_inputs', 'input_fingerprint'])
 def test_precalculation_failures_persist_exactly_one_failed_run(stage, db_session, monkeypatch):
     import app.services.consensus_engine as engine_module

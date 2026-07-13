@@ -180,7 +180,12 @@ def spatial_relevance_details(spot: SurfSpot, point: ProviderForecastPoint, conf
         if not all(math.isfinite(value) for value in coordinates):
             raise ValueError('nonfinite coordinate')
         spot_lat, spot_lon, selected_lat, selected_lon = coordinates
-        if not (-90 <= selected_lat <= 90 and -180 <= selected_lon <= 180):
+        if not (
+            -90 <= spot_lat <= 90
+            and -180 <= spot_lon <= 180
+            and -90 <= selected_lat <= 90
+            and -180 <= selected_lon <= 180
+        ):
             raise ValueError('coordinate outside geographic range')
         distance = haversine_km(spot_lat, spot_lon, selected_lat, selected_lon)
     except (TypeError, ValueError, OverflowError):
