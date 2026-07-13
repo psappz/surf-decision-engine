@@ -33,12 +33,19 @@ def upgrade():
         # 0005 omitted these ORM-declared indexes.
         batch.create_index('ix_spot_assessment_runs_consensus_run_id', ['consensus_run_id'], unique=False)
         batch.create_index('ix_spot_assessment_runs_status', ['status'], unique=False)
+    with op.batch_alter_table('spot_assessment_points') as batch:
+        batch.create_check_constraint(
+            'ck_assessment_breaking_max_nonnegative',
+            'breaking_wave_max IS NULL OR breaking_wave_max >= 0',
+        )
 
 
 def downgrade():
-    # Data-dependent after forced reruns: the old schema cannot represent two
-    # otherwise equivalent immutable rows. Operators must retain 0007 or resolve
-    # such rows explicitly before downgrading.
+    # Data-dependent after forced/failed retries or multiple scopes: the old
+    # schema cannot represent two rows sharing its narrower identity. Operators
+    # must retain 0007 or resolve such rows explicitly before downgrading.
+    with op.batch_alter_table('spot_assessment_points') as batch:
+        batch.drop_constraint('ck_assessment_breaking_max_nonnegative', type_='check')
     with op.batch_alter_table('spot_assessment_runs') as batch:
         batch.drop_index('ix_spot_assessment_runs_status')
         batch.drop_index('ix_spot_assessment_runs_consensus_run_id')

@@ -95,6 +95,10 @@ def test_height_period_wind_tide_boundaries_and_missing_rules():
     assert above_safe is not None and above_safe < 100
     assert below_zero is not None and below_zero > 0
     assert wind_speed_fit_global(25.001, cfg) == 0
+    assert range_fit(.4, .25, .35) == pytest.approx(50)
+    assert range_fit(.45, .25, .35) == 0
+    assert range_fit(.5, .5, .5) == 100
+    assert range_fit(.50001, .5, .5) == 0
 
 
 def test_breaking_range_order_fallback_and_provisional_label(db):
@@ -244,3 +248,132 @@ def test_repository_redacts_terminal_error_messages(db, monkeypatch):
     mark_spot_assessment_run_status(db, run.id, 'failed', error_message=f'token={secret} Bearer abc.def.ghi')
     db.commit()
     assert secret not in db.get(SpotAssessmentRun, run.id).error_message
+
+
+def test_hash_and_calculation_share_canonical_values_at_rounding_discontinuity():
+    below = replace(default_spot_intelligence_configuration(), breaking_upper_multiplier=1.2499999999996)
+    above = replace(default_spot_intelligence_configuration(), breaking_upper_multiplier=1.2500000000004)
+    assert below.configuration_hash() == above.configuration_hash()
+    assert provisional_breaking_range(1, 100, 8, 1, 1, 100, below)[1] != provisional_breaking_range(1, 100, 8, 1, 1, 100, above)[1]
+    canonical_below, canonical_above = below.canonicalized(), above.canonicalized()
+    assert canonical_below == canonical_above
+    assert provisional_breaking_range(1, 100, 8, 1, 1, 100, canonical_below)[1] == provisional_breaking_range(1, 100, 8, 1, 1, 100, canonical_above)[1]
+
+
+def test_all_invalid_consensus_domains_are_audited_without_misleading_fits(db):
+    run = _consensus(db)
+    point = db.query(ConsensusForecastPoint).one()
+    point.swell_wave_height = -1
+    point.swell_wave_direction = 360
+    point.swell_wave_period = -1
+    point.wind_direction = -1
+    point.wind_speed = -1
+    point.tide_height = -1
+    point.agreement_score = 101
+    point.freshness_score = -1
+    point.completeness_score = float('nan')
+    point.confidence_input_score = 101
+    point.calculation_details_json = {'spatial_relevance_score': -1}
+    db.commit()
+    result = SpotIntelligenceEngine(db).calculate(_request(run.id))
+    row = db.query(SpotAssessmentPoint).filter_by(assessment_run_id=result.assessment_run_id).one()
+    assert all(value is None for value in (
+        row.swell_direction_fit, row.swell_height_fit, row.period_fit,
+        row.wind_direction_fit, row.wind_speed_fit, row.tide_fit,
+        row.breaking_wave_min, row.breaking_wave_max,
+    ))
+    factors = row.uncertainty_factors_json['factors']
+    assert len([item for item in factors if item['code'] == 'INVALID_INPUT']) >= 6
+    assert len([item for item in factors if item['code'] == 'INVALID_CONSENSUS_QUALITY_INPUT']) == 5
+
+
+def test_failed_zero_attempt_is_durable_and_normal_retry_uses_next_sequence(db, monkeypatch):
+    import app.services.spot_intelligence_engine as module
+    run = _consensus(db)
+    original = module.create_spot_assessment_points
+
+    def fail_first(session, rows):
+        raise RuntimeError('first attempt fails')
+
+    monkeypatch.setattr(module, 'create_spot_assessment_points', fail_first)
+    with pytest.raises(RuntimeError, match='first attempt fails'):
+        SpotIntelligenceEngine(db).calculate(_request(run.id))
+    failed = db.query(SpotAssessmentRun).one()
+    assert failed.status == 'failed' and failed.recalculation_sequence == 0
+    monkeypatch.setattr(module, 'create_spot_assessment_points', original)
+    retry = SpotIntelligenceEngine(db).calculate(_request(run.id))
+    rows = db.query(SpotAssessmentRun).order_by(SpotAssessmentRun.recalculation_sequence).all()
+    assert [(row.status, row.recalculation_sequence) for row in rows] == [('failed', 0), ('completed', 1)]
+    assert retry.assessment_run_id == rows[1].id
+
+
+def test_unique_insert_races_reuse_winner_or_retry_allocation_without_orphans(db, monkeypatch):
+    import app.services.spot_intelligence_engine as module
+    run = _consensus(db)
+    winner = SpotIntelligenceEngine(db).calculate(_request(run.id))
+    real_find = module.find_equivalent_completed_assessment
+    find_calls = 0
+
+    def hidden_once(*args, **kwargs):
+        nonlocal find_calls
+        find_calls += 1
+        return None if find_calls == 1 else real_find(*args, **kwargs)
+
+    monkeypatch.setattr(module, 'find_equivalent_completed_assessment', hidden_once)
+    raced = SpotIntelligenceEngine(db).calculate(_request(run.id))
+    assert raced.status == 'reused' and raced.assessment_run_id == winner.assessment_run_id
+
+    real_create = module.create_spot_assessment_run
+    create_calls = 0
+
+    def collide_once(*args, **kwargs):
+        nonlocal create_calls
+        create_calls += 1
+        if create_calls == 1:
+            raise sa.exc.IntegrityError('insert', {}, Exception('unique race'))
+        return real_create(*args, **kwargs)
+
+    monkeypatch.setattr(module, 'create_spot_assessment_run', collide_once)
+    forced = SpotIntelligenceEngine(db).calculate(_request(run.id, force=True))
+    assert db.get(SpotAssessmentRun, forced.assessment_run_id).recalculation_sequence == 1
+    assert db.query(SpotAssessmentRun).filter_by(status='running').count() == 0
+
+
+def test_scope_is_exact_selected_points_and_rejects_empty_or_unmatched_spots(db):
+    run = _consensus(db, points=2)
+    result = SpotIntelligenceEngine(db).calculate(_request(run.id))
+    audit = db.get(SpotAssessmentRun, result.assessment_run_id)
+    point_ids = [point.id for point in db.query(ConsensusForecastPoint).order_by(ConsensusForecastPoint.valid_at)]
+    assert audit.metadata_json['selected_consensus_point_ids'] == point_ids
+    with pytest.raises(ValueError, match='explicitly empty'):
+        SpotIntelligenceEngine(db).calculate(_request(run.id, spot_ids=()))
+    with pytest.raises(ValueError, match='no selected consensus points'):
+        SpotIntelligenceEngine(db).calculate(_request(run.id, spot_ids=(db.query(SurfSpot).one().id, 999)))
+    assert db.query(SpotAssessmentRun).count() == 1
+
+
+def test_required_provenance_survives_success_and_failure_and_oversize_rejects(db, monkeypatch):
+    import app.services.spot_intelligence_engine as module
+    run = _consensus(db)
+    success = SpotIntelligenceEngine(db).calculate(_request(run.id))
+    completed = db.get(SpotAssessmentRun, success.assessment_run_id)
+    assert completed.metadata_json['canonical_spot_rules_snapshot']['spots'][0]['spot_id'] == db.query(SurfSpot).one().id
+    assert completed.metadata_json['selected_consensus_point_ids'] == [db.query(ConsensusForecastPoint).one().id]
+
+    original = module.create_spot_assessment_points
+    def fail_after_audit(session, rows):
+        raise RuntimeError('fail after audit')
+    monkeypatch.setattr(module, 'create_spot_assessment_points', fail_after_audit)
+    with pytest.raises(RuntimeError):
+        SpotIntelligenceEngine(db).calculate(_request(run.id, force=True))
+    failed = db.query(SpotAssessmentRun).filter_by(status='failed').one()
+    assert failed.metadata_json['canonical_spot_rules_snapshot'] == completed.metadata_json['canonical_spot_rules_snapshot']
+    assert failed.metadata_json['selected_consensus_point_ids'] == completed.metadata_json['selected_consensus_point_ids']
+
+    monkeypatch.setattr(module, 'create_spot_assessment_points', original)
+    other = _consensus(db)
+    before = db.query(SpotAssessmentRun).count()
+    monkeypatch.setattr(module, 'REQUIRED_PROVENANCE_MAX_BYTES', 10)
+    with pytest.raises(ValueError, match='exact required provenance'):
+        SpotIntelligenceEngine(db).calculate(_request(other.id))
+    assert db.query(SpotAssessmentRun).count() == before

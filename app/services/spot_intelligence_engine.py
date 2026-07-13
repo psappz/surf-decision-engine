@@ -10,6 +10,7 @@ from time import perf_counter
 from typing import Any
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from ..forecast_ledger_models import ConsensusForecastPoint, ConsensusRun
@@ -24,6 +25,9 @@ from .spot_intelligence_configuration import SpotIntelligenceConfiguration, defa
 from .spot_intelligence_rules import SpotRulesSnapshot, build_spot_rules_snapshot
 
 FORMULA_VERSION = 'spot-assessment-formulas-v1'
+RUN_METADATA_MAX_BYTES = 131_072
+REQUIRED_PROVENANCE_MAX_BYTES = 98_304
+ATTEMPT_ALLOCATION_RETRIES = 5
 
 
 @dataclass(frozen=True)
@@ -68,13 +72,18 @@ class SpotIntelligenceEngine:
         if not points:
             raise ValueError('completed consensus run has no points in the selected scope')
         spot_ids = tuple(sorted({point.spot_id for point in points}))
+        if request.spot_ids is not None:
+            absent = sorted(set(request.spot_ids) - set(spot_ids))
+            if absent:
+                raise ValueError(f'requested spot IDs have no selected consensus points: {absent}')
         spots = list(self.db.scalars(select(SurfSpot).where(SurfSpot.id.in_(spot_ids)).order_by(SurfSpot.id)))
         found = {spot.id for spot in spots}
         if found != set(spot_ids):
             raise ValueError(f'missing SurfSpot rows for IDs {sorted(set(spot_ids) - found)}')
         snapshot = build_spot_rules_snapshot(spots, version=request.configuration.spot_rules_version)
         rules_hash = snapshot.rules_hash()
-        scope = {'spot_ids': list(request.spot_ids) if request.spot_ids else None, 'consensus_point_ids': [point.id for point in points]}
+        selected_point_ids = [point.id for point in points]
+        scope = {'consensus_point_ids': selected_point_ids}
         scope_hash = _hash(scope)
         warnings = tuple(sorted({issue['code'] for row in snapshot.spots for issue in row['metadata_issues']}))
         if not request.dry_run and not request.force_recalculation:
@@ -88,33 +97,30 @@ class SpotIntelligenceEngine:
         if request.dry_run:
             rows = self._build_points(None, points, snapshot, request.configuration, consensus_run)
             return SpotAssessmentResult(None, consensus_run.id, len(rows), len(spot_ids), 'dry_run', rules_hash, config_hash, scope_hash, warnings, perf_counter() - started)
-        metadata_items = max(64, len(points) + 8, len(snapshot.spots) + 8)
-        metadata = bounded_json({
-            'calculation_scope': scope,
-            'calculation_scope_hash': scope_hash,
-            'consensus': {'run_id': consensus_run.id, 'engine_version': consensus_run.consensus_engine_version, 'configuration_hash': consensus_run.configuration_hash},
-            'spot_rules_snapshot': snapshot.canonical_payload(),
-            'spot_rules_hash': rules_hash,
-            'engine_version': request.engine_version,
-            'configuration_hash': config_hash,
-            'configuration_snapshot': request.configuration.canonical_payload(),
-            'formula_version': FORMULA_VERSION,
-            'shadow_mode': True,
-            'warnings': list(warnings),
-        }, max_items=metadata_items, max_bytes=131_072)
-        recalculation_sequence = next_spot_assessment_recalculation_sequence(
-            self.db, consensus_run_id=consensus_run.id, rules_hash=rules_hash,
-            engine_version=request.engine_version, configuration_hash=config_hash,
-            scope_hash=scope_hash, force=request.force_recalculation,
+        metadata = _run_metadata(
+            canonical_rules_snapshot=snapshot.canonical_payload(),
+            selected_point_ids=selected_point_ids,
+            optional={
+                'calculation_scope_hash': scope_hash,
+                'consensus': {'run_id': consensus_run.id, 'engine_version': consensus_run.consensus_engine_version, 'configuration_hash': consensus_run.configuration_hash},
+                'spot_rules_hash': rules_hash,
+                'engine_version': request.engine_version,
+                'configuration_hash': config_hash,
+                'configuration_snapshot': request.configuration.canonical_payload(),
+                'formula_version': FORMULA_VERSION,
+                'shadow_mode': True,
+                'warnings': list(warnings),
+            },
         )
-        run = create_spot_assessment_run(
-            self.db, consensus_run_id=consensus_run.id, calculated_at=datetime.now(UTC),
-            spot_rules_version=snapshot.version, spot_rules_hash=rules_hash,
-            spot_intelligence_engine_version=request.engine_version, configuration_hash=config_hash,
-            calculation_scope_hash=scope_hash, recalculation_sequence=recalculation_sequence,
-            status='running', metadata_json=metadata,
+        run, winner = self._create_running_attempt(
+            request=request, consensus_run=consensus_run, snapshot=snapshot,
+            rules_hash=rules_hash, config_hash=config_hash, scope_hash=scope_hash,
+            metadata=metadata,
         )
-        self.db.commit()
+        if winner is not None:
+            existing_points = list_spot_assessment_points_for_run(self.db, winner.id)
+            return SpotAssessmentResult(winner.id, consensus_run.id, 0, len({p.spot_id for p in existing_points}), 'reused', rules_hash, config_hash, scope_hash, warnings, perf_counter() - started)
+        assert run is not None
         run_id = run.id
         stage = 'build_points'
         try:
@@ -124,7 +130,8 @@ class SpotIntelligenceEngine:
             stage = 'complete_run'
             completed_metadata = dict(metadata)
             completed_metadata.update({'status': 'completed', 'points_written': len(rows), 'duration_seconds': perf_counter() - started})
-            mark_spot_assessment_run_status(self.db, run_id, 'completed', metadata_json=bounded_json(completed_metadata, max_items=metadata_items, max_bytes=131_072))
+            _assert_run_metadata_envelope(completed_metadata)
+            mark_spot_assessment_run_status(self.db, run_id, 'completed', metadata_json=completed_metadata)
             self.db.commit()
             return SpotAssessmentResult(run_id, consensus_run.id, len(rows), len(spot_ids), 'completed', rules_hash, config_hash, scope_hash, warnings, perf_counter() - started)
         except Exception as exc:
@@ -132,15 +139,50 @@ class SpotIntelligenceEngine:
             failed = dict(metadata)
             failed.update({'status': 'failed', 'failure_stage': redact_text(stage, max_length=40), 'duration_seconds': perf_counter() - started})
             try:
-                mark_spot_assessment_run_status(self.db, run_id, 'failed', error_message=_safe_error(exc), metadata_json=bounded_json(failed, max_items=metadata_items, max_bytes=131_072))
+                _assert_run_metadata_envelope(failed)
+                mark_spot_assessment_run_status(self.db, run_id, 'failed', error_message=_safe_error(exc), metadata_json=failed)
                 self.db.commit()
             except Exception:
                 self.db.rollback()
             raise
 
+    def _create_running_attempt(self, *, request, consensus_run, snapshot, rules_hash, config_hash, scope_hash, metadata):
+        sequence = None if request.force_recalculation else 0
+        for _ in range(ATTEMPT_ALLOCATION_RETRIES):
+            if sequence is None:
+                sequence = next_spot_assessment_recalculation_sequence(
+                    self.db, consensus_run_id=consensus_run.id, rules_hash=rules_hash,
+                    engine_version=request.engine_version, configuration_hash=config_hash,
+                    scope_hash=scope_hash,
+                )
+            try:
+                run = create_spot_assessment_run(
+                    self.db, consensus_run_id=consensus_run.id, calculated_at=datetime.now(UTC),
+                    spot_rules_version=snapshot.version, spot_rules_hash=rules_hash,
+                    spot_intelligence_engine_version=request.engine_version, configuration_hash=config_hash,
+                    calculation_scope_hash=scope_hash, recalculation_sequence=sequence,
+                    status='running', metadata_json=metadata,
+                )
+                self.db.commit()
+                return run, None
+            except IntegrityError:
+                # The unique key is the final allocator. Rollback removes the
+                # losing pending row before either reuse or a fresh sequence.
+                self.db.rollback()
+                if not request.force_recalculation:
+                    winner = find_equivalent_completed_assessment(
+                        self.db, consensus_run_id=consensus_run.id, rules_hash=rules_hash,
+                        engine_version=request.engine_version, configuration_hash=config_hash,
+                        scope_hash=scope_hash,
+                    )
+                    if winner is not None:
+                        return None, winner
+                sequence = None
+        raise RuntimeError('could not allocate a unique spot assessment attempt after bounded retries')
+
     def _select_points(self, request: SpotAssessmentRequest) -> list[ConsensusForecastPoint]:
         stmt = select(ConsensusForecastPoint).where(ConsensusForecastPoint.consensus_run_id == request.consensus_run_id)
-        if request.spot_ids:
+        if request.spot_ids is not None:
             stmt = stmt.where(ConsensusForecastPoint.spot_id.in_(request.spot_ids))
         stmt = stmt.order_by(ConsensusForecastPoint.valid_at, ConsensusForecastPoint.spot_id, ConsensusForecastPoint.id)
         return list(self.db.scalars(stmt))
@@ -158,11 +200,17 @@ def _assess_point(run_id, point, snapshot_row, rules_hash, config, consensus_run
         hazards.append({'code': 'INVALID_SPOT_METADATA', 'field': issue['field']})
     if not rules['is_active_for_recommendations']:
         uncertainty.append({'code': 'INACTIVE_OR_OBSERVATION_ONLY_SPOT'})
-    height, height_source = _primary(point.swell_wave_height, point.wave_height)
-    direction, direction_source = _primary(point.swell_wave_direction, point.wave_direction)
-    period, period_source = _primary(point.swell_wave_period, point.wave_period)
-    for name, value, source in (('height', height, height_source), ('direction', direction, direction_source), ('period', period, period_source)):
-        if value is None:
+    height, height_source, height_state = _primary_input(point.swell_wave_height, point.wave_height)
+    direction, direction_source, direction_state = _primary_input(point.swell_wave_direction, point.wave_direction, direction=True)
+    period, period_source, period_state = _primary_input(point.swell_wave_period, point.wave_period)
+    for name, value, source, state in (
+        ('height', height, height_source, height_state),
+        ('direction', direction, direction_source, direction_state),
+        ('period', period, period_source, period_state),
+    ):
+        if state == 'invalid':
+            uncertainty.append({'code': 'INVALID_INPUT', 'field': name})
+        elif value is None:
             uncertainty.append({'code': 'MISSING_INPUT', 'field': name})
         elif source.startswith('total_wave'):
             uncertainty.append({'code': 'TOTAL_WAVE_FALLBACK', 'field': name, 'source': source})
@@ -173,20 +221,23 @@ def _assess_point(run_id, point, snapshot_row, rules_hash, config, consensus_run
         height_fit = 0.0
         hazards.append({'code': 'SWELL_HEIGHT_ABOVE_SPOT_MAXIMUM', 'value_m': _round(height), 'threshold_m': maximum})
     period_fit = range_fit(period, rules['preferred_period_min'], rules['preferred_period_max'], taper_fraction=config.range_taper_fraction)
-    wind_direction_fit = preferred_direction_fit(point.wind_direction, rules['preferred_wind_direction_min'], rules['preferred_wind_direction_max'])
-    if _direction(point.wind_direction) is None:
+    wind_direction = _direction(point.wind_direction)
+    wind_direction_fit = preferred_direction_fit(wind_direction, rules['preferred_wind_direction_min'], rules['preferred_wind_direction_max'])
+    if wind_direction is None:
         uncertainty.append({'code': 'MISSING_INPUT' if point.wind_direction is None else 'INVALID_INPUT', 'field': 'wind_direction'})
-    wind_speed_fit = wind_speed_fit_global(point.wind_speed, config)
-    valid_wind_speed = _finite(point.wind_speed)
-    if valid_wind_speed is None or valid_wind_speed < 0:
+    wind_speed = _nonnegative(point.wind_speed)
+    wind_speed_fit = wind_speed_fit_global(wind_speed, config)
+    if wind_speed is None:
         uncertainty.append({'code': 'MISSING_INPUT' if point.wind_speed is None else 'INVALID_INPUT', 'field': 'wind_speed'})
     else:
         uncertainty.append({'code': 'GLOBAL_WIND_SPEED_RULE_USED', 'safe_threshold': config.global_wind_safe_speed, 'zero_fit_threshold': config.global_wind_zero_fit_speed, 'reason': 'SurfSpot has no wind-speed rule fields'})
-        if valid_wind_speed > config.global_wind_zero_fit_speed:
-            hazards.append({'code': 'WIND_SPEED_ABOVE_GLOBAL_THRESHOLD', 'value': _round(valid_wind_speed), 'threshold': config.global_wind_zero_fit_speed})
-    tide_fit = range_fit(point.tide_height, rules['preferred_tide_min'], rules['preferred_tide_max'], taper_fraction=config.range_taper_fraction)
-    if point.tide_height is None:
-        uncertainty.append({'code': 'MISSING_INPUT', 'field': 'tide_height'})
+        if wind_speed > config.global_wind_zero_fit_speed:
+            hazards.append({'code': 'WIND_SPEED_ABOVE_GLOBAL_THRESHOLD', 'value': _round(wind_speed), 'threshold': config.global_wind_zero_fit_speed})
+    tide_height = _nonnegative(point.tide_height)
+    tide_fit = range_fit(tide_height, rules['preferred_tide_min'], rules['preferred_tide_max'], taper_fraction=config.range_taper_fraction)
+    tide_state = 'valid' if tide_height is not None else ('missing' if point.tide_height is None else 'invalid')
+    if tide_state != 'valid':
+        uncertainty.append({'code': 'MISSING_INPUT' if tide_state == 'missing' else 'INVALID_INPUT', 'field': 'tide_height'})
     if rules['tide_preference'] not in (None, 'all', 'any'):
         uncertainty.append({'code': 'TIDE_STATE_UNAVAILABLE', 'preference': rules['tide_preference'], 'note': 'preference retained; no tide state invented'})
     for factor_name, rule_name in (('swell_direction', 'preferred_swell_direction_min'), ('swell_height', 'preferred_swell_height_min'), ('period', 'preferred_period_min'), ('wind_direction', 'preferred_wind_direction_min'), ('tide', 'preferred_tide_min')):
@@ -198,29 +249,43 @@ def _assess_point(run_id, point, snapshot_row, rules_hash, config, consensus_run
         uncertainty.append({'code': 'ADJUSTMENT_FALLBACK', 'field': 'exposure_factor', 'effective': exposure})
     if shelter_fallback:
         uncertainty.append({'code': 'ADJUSTMENT_FALLBACK', 'field': 'shelter_factor', 'effective': shelter})
-    breaking_min, breaking_max, breaking_details = provisional_breaking_range(height, direction_fit, period, exposure, shelter, tide_fit, config)
+    invalid_transform_fields = [
+        name for name, state in (
+            ('height', height_state), ('direction', direction_state),
+            ('period', period_state), ('tide_height', tide_state),
+        ) if state == 'invalid'
+    ]
+    if invalid_transform_fields:
+        breaking_min = breaking_max = None
+        breaking_details = {'method': 'model-derived provisional', 'available': False, 'reason': 'invalid_input', 'fields': invalid_transform_fields}
+    else:
+        breaking_min, breaking_max, breaking_details = provisional_breaking_range(height, direction_fit, period, exposure, shelter, tide_fit, config)
     uncertainty.append({'code': 'PROVISIONAL_BREAKING_TRANSFORM', 'method': 'model-derived', 'formula_version': FORMULA_VERSION})
     if rules['hazards']:
         hazards.append({'code': 'STATIC_SPOT_HAZARD', 'supporting_context': rules['hazards']})
     consensus_uncertainty = {}
-    for name in ('agreement_score', 'freshness_score', 'completeness_score', 'confidence_input_score'):
-        value = _finite(getattr(point, name))
+    quality_values = {
+        name: getattr(point, name)
+        for name in ('agreement_score', 'freshness_score', 'completeness_score', 'confidence_input_score')
+    }
+    details_json = point.calculation_details_json
+    quality_values['spatial_relevance_score'] = details_json.get('spatial_relevance_score') if isinstance(details_json, dict) else None
+    for name, raw_value in quality_values.items():
+        value = _quality_score(raw_value)
         consensus_uncertainty[name] = value
-        if value is None:
+        if raw_value is None:
             uncertainty.append({'code': 'MISSING_CONSENSUS_QUALITY_INPUT', 'field': name})
+        elif value is None:
+            uncertainty.append({'code': 'INVALID_CONSENSUS_QUALITY_INPUT', 'field': name})
         elif value < config.low_consensus_score_threshold:
             uncertainty.append({'code': 'LOW_CONSENSUS_QUALITY_INPUT', 'field': name, 'value': value})
-    spatial = _finite((point.calculation_details_json or {}).get('spatial_relevance_score')) if isinstance(point.calculation_details_json, dict) else None
-    consensus_uncertainty['spatial_relevance_score'] = spatial
-    if spatial is None:
-        uncertainty.append({'code': 'MISSING_CONSENSUS_QUALITY_INPUT', 'field': 'spatial_relevance_score'})
     details = bounded_json({
         'formula_version': FORMULA_VERSION,
         'method_label': 'model-derived provisional spot assessment',
         'engine_configuration': {'engine_version': config.engine_version, 'configuration_hash': config.configuration_hash(), 'snapshot': config.canonical_payload()},
         'consensus_provenance': {'point_id': point.id, 'run_id': consensus_run.id, 'engine_version': consensus_run.consensus_engine_version, 'configuration_hash': consensus_run.configuration_hash},
         'spot_rules_reference': {'spot_id': point.spot_id, 'spot_rules_hash': rules_hash, 'snapshot_entry': snapshot_row},
-        'inputs': {'height': height, 'height_source': height_source, 'direction': direction, 'direction_source': direction_source, 'period': period, 'period_source': period_source, 'wind_speed': _finite(point.wind_speed), 'wind_direction': _finite(point.wind_direction), 'tide_height': _finite(point.tide_height)},
+        'inputs': {'height': height, 'height_source': height_source, 'direction': direction, 'direction_source': direction_source, 'period': period, 'period_source': period_source, 'wind_speed': wind_speed, 'wind_direction': wind_direction, 'tide_height': tide_height},
         'fits': {'swell_direction_fit': direction_fit, 'swell_height_fit': height_fit, 'period_fit': period_fit, 'wind_direction_fit': wind_direction_fit, 'wind_speed_fit': wind_speed_fit, 'tide_fit': tide_fit},
         'transformations': {'exposure_adjustment': exposure, 'shelter_adjustment': shelter, 'breaking_wave': breaking_details},
         'consensus_uncertainty_inputs': consensus_uncertainty,
@@ -275,7 +340,9 @@ def range_fit(value, lo, hi, *, taper_fraction=1.0):
         return None
     if lo <= value <= hi:
         return 100.0
-    width = max(hi - lo, 1.0) * taper_fraction
+    # A non-zero range tapers over its actual width. An exact-point range uses
+    # a tiny deterministic width so equality remains 100 without division by 0.
+    width = (hi - lo if hi > lo else 1e-6) * taper_fraction
     distance = lo - value if value < lo else value - hi
     return _score(100.0 * (1.0 - distance / width))
 
@@ -306,7 +373,7 @@ def provisional_breaking_range(height, direction_fit, period, exposure, shelter,
 
 def calculate_spot_assessment(db: Session, consensus_run_id: int, *, spot_ids=None, force=False, dry_run=False):
     config = default_spot_intelligence_configuration()
-    request = SpotAssessmentRequest(consensus_run_id, tuple(spot_ids) if spot_ids else None, config.engine_version, config, force, dry_run)
+    request = SpotAssessmentRequest(consensus_run_id, tuple(spot_ids) if spot_ids is not None else None, config.engine_version, config, force, dry_run)
     return SpotIntelligenceEngine(db).calculate(request)
 
 
@@ -316,20 +383,34 @@ def _validated_request(request):
         raise ValueError('consensus_run_id must be a positive integer')
     if request.engine_version != request.configuration.engine_version:
         raise ValueError('request engine_version must match configuration engine_version')
-    spot_ids = tuple(sorted(set(request.spot_ids))) if request.spot_ids else None
-    if spot_ids and any(isinstance(value, bool) or not isinstance(value, int) or value <= 0 for value in spot_ids):
+    if request.spot_ids is not None and not request.spot_ids:
+        raise ValueError('spot_ids must not be explicitly empty; omit spot_ids to select all')
+    spot_ids = tuple(sorted(set(request.spot_ids))) if request.spot_ids is not None else None
+    if spot_ids is not None and any(isinstance(value, bool) or not isinstance(value, int) or value <= 0 for value in spot_ids):
         raise ValueError('spot_ids must be positive integers')
-    return SpotAssessmentRequest(request.consensus_run_id, spot_ids, request.engine_version, request.configuration, request.force_recalculation, request.dry_run)
+    canonical_config = request.configuration.canonicalized()
+    return SpotAssessmentRequest(request.consensus_run_id, spot_ids, request.engine_version, canonical_config, request.force_recalculation, request.dry_run)
 
 
-def _primary(primary, fallback):
-    primary = _finite(primary)
-    if primary is not None and primary >= 0:
-        return primary, 'primary_swell'
-    fallback = _finite(fallback)
-    if fallback is not None and fallback >= 0:
-        return fallback, 'total_wave_fallback'
-    return None, 'missing'
+def _primary_input(primary, fallback, *, direction=False):
+    validator = _direction if direction else _nonnegative
+    if primary is not None:
+        value = validator(primary)
+        return (value, 'primary_swell', 'valid') if value is not None else (None, 'primary_swell', 'invalid')
+    if fallback is not None:
+        value = validator(fallback)
+        return (value, 'total_wave_fallback', 'valid') if value is not None else (None, 'total_wave_fallback', 'invalid')
+    return None, 'missing', 'missing'
+
+
+def _nonnegative(value):
+    value = _finite(value)
+    return value if value is not None and value >= 0 else None
+
+
+def _quality_score(value):
+    value = _finite(value)
+    return value if value is not None and 0 <= value <= 100 else None
 
 
 def _bounded_factor(value, lo, hi):
@@ -373,6 +454,29 @@ def _practical_round(value, increment):
 
 def _hash(value):
     return hashlib.sha256(json.dumps(value, sort_keys=True, separators=(',', ':'), ensure_ascii=True).encode()).hexdigest()
+
+
+def _run_metadata(*, canonical_rules_snapshot, selected_point_ids, optional):
+    required = {
+        'canonical_spot_rules_snapshot': canonical_rules_snapshot,
+        'selected_consensus_point_ids': list(selected_point_ids),
+    }
+    required_bytes = len(json.dumps(required, sort_keys=True, separators=(',', ':'), ensure_ascii=True).encode())
+    if required_bytes > REQUIRED_PROVENANCE_MAX_BYTES:
+        raise ValueError(
+            f'exact required provenance is {required_bytes} bytes and exceeds '
+            f'the {REQUIRED_PROVENANCE_MAX_BYTES}-byte hard cap'
+        )
+    metadata = dict(required)
+    metadata['optional_metadata'] = bounded_json(optional, max_items=64, max_bytes=24_000)
+    _assert_run_metadata_envelope(metadata)
+    return metadata
+
+
+def _assert_run_metadata_envelope(metadata):
+    size = len(json.dumps(metadata, sort_keys=True, separators=(',', ':'), ensure_ascii=True).encode())
+    if size > RUN_METADATA_MAX_BYTES:
+        raise ValueError(f'run metadata is {size} bytes and exceeds the {RUN_METADATA_MAX_BYTES}-byte hard cap')
 
 
 def _safe_error(exc):

@@ -86,10 +86,8 @@ def find_equivalent_completed_assessment(db: Session, *, consensus_run_id: int, 
     return db.scalar(stmt)
 
 
-def next_spot_assessment_recalculation_sequence(db: Session, *, consensus_run_id: int, rules_hash: str, engine_version: str, configuration_hash: str, scope_hash: str, force: bool) -> int:
-    """Return zero for the idempotent run, or the next forced-run sequence."""
-    if not force:
-        return 0
+def next_spot_assessment_recalculation_sequence(db: Session, *, consensus_run_id: int, rules_hash: str, engine_version: str, configuration_hash: str, scope_hash: str) -> int:
+    """Return the next append-only attempt sequence for equivalent inputs."""
     value = db.scalar(select(func.max(SpotAssessmentRun.recalculation_sequence)).where(
         SpotAssessmentRun.consensus_run_id == consensus_run_id,
         SpotAssessmentRun.spot_rules_hash == rules_hash,
@@ -100,10 +98,12 @@ def next_spot_assessment_recalculation_sequence(db: Session, *, consensus_run_id
     return int(value or 0) + 1
 
 
-def list_spot_assessment_points_for_run(db: Session, run_id: int, *, limit: int | None = None) -> list[SpotAssessmentPoint]:
+def list_spot_assessment_points_for_run(db: Session, run_id: int, *, limit: int | None = None, offset: int = 0) -> list[SpotAssessmentPoint]:
     stmt = select(SpotAssessmentPoint).where(SpotAssessmentPoint.assessment_run_id == run_id).order_by(SpotAssessmentPoint.valid_at, SpotAssessmentPoint.spot_id, SpotAssessmentPoint.id)
     if limit is not None:
         stmt = stmt.limit(limit)
+    if offset:
+        stmt = stmt.offset(offset)
     return list(db.scalars(stmt))
 
 
@@ -115,5 +115,9 @@ def get_spot_assessment_point(db: Session, point_id: int) -> SpotAssessmentPoint
     return db.get(SpotAssessmentPoint, point_id)
 
 
-def latest_spot_assessment_runs(db: Session, *, limit: int = 20) -> list[SpotAssessmentRun]:
-    return list(db.scalars(select(SpotAssessmentRun).order_by(SpotAssessmentRun.calculated_at.desc(), SpotAssessmentRun.id.desc()).limit(limit)))
+def count_spot_assessment_runs(db: Session) -> int:
+    return int(db.scalar(select(func.count()).select_from(SpotAssessmentRun)) or 0)
+
+
+def latest_spot_assessment_runs(db: Session, *, limit: int = 20, offset: int = 0) -> list[SpotAssessmentRun]:
+    return list(db.scalars(select(SpotAssessmentRun).order_by(SpotAssessmentRun.calculated_at.desc(), SpotAssessmentRun.id.desc()).limit(limit).offset(offset)))

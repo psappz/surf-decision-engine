@@ -77,6 +77,15 @@ class SpotIntelligenceConfiguration:
         body = json.dumps(self.canonical_payload(), sort_keys=True, separators=(',', ':'), ensure_ascii=True)
         return hashlib.sha256(body.encode()).hexdigest()
 
+    def canonicalized(self) -> 'SpotIntelligenceConfiguration':
+        """Return the exact values represented by ``canonical_payload``.
+
+        Calculation and hashing must consume the same values.  In particular,
+        this prevents two values on opposite sides of a practical-rounding
+        boundary from sharing a hash while producing different output.
+        """
+        return SpotIntelligenceConfiguration(**self.canonical_payload())
+
 
 def _stable(value):
     if isinstance(value, dict):

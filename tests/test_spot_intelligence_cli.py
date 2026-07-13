@@ -63,7 +63,7 @@ def test_cli_failed_zero_points_distinguished_from_missing_and_redacted(cli_db, 
     run = create_spot_assessment_run(db, consensus_run_id=consensus.id, calculated_at=NOW, spot_rules_version='v', spot_rules_hash='rh', spot_intelligence_engine_version='e', configuration_hash='ch', status='running', metadata_json={'api_key': secret, 'heavy': ['x' * 1000] * 50})
     mark_spot_assessment_run_status(db, run.id, 'failed', error_message=f'Bearer {secret}', metadata_json=run.metadata_json); db.commit()
     assert cli.main(['status']) == 0
-    output = capsys.readouterr().out; assert secret not in output and json.loads(output)[0]['point_count'] == 0
+    output = capsys.readouterr().out; assert secret not in output and json.loads(output)['runs'][0]['point_count'] == 0
     assert cli.main(['inspect-run', str(run.id)]) == 0
     payload = _json(capsys); assert payload['run']['status'] == 'failed' and payload['point_count'] == 0
     assert cli.main(['inspect-run', '999']) == 2 and _json(capsys)['error'] == 'spot_assessment_run_not_found'
@@ -80,7 +80,11 @@ def test_cli_status_metadata_heavy_pagination(limit, cli_db, capsys, monkeypatch
     db.commit()
     assert cli.main(['status', '--limit', str(limit)]) == 0
     output = capsys.readouterr().out; payload = json.loads(output)
-    assert len(payload) == limit and len(output.encode()) <= cli.CLI_JSON_MAX_BYTES + 1 and secret not in output
+    assert len(payload['runs']) == limit and payload['returned_run_count'] == limit
+    assert payload['total_run_count'] == 100 and payload['offset'] == 0
+    assert payload['truncated'] is (limit < 100)
+    assert payload['next_offset'] == (limit if limit < 100 else None)
+    assert len(output.encode()) <= cli.CLI_JSON_MAX_BYTES + 1 and secret not in output
 
 
 @pytest.mark.parametrize('limit', [25, 50, 100])
@@ -93,3 +97,29 @@ def test_cli_inspect_counts_and_truncation(limit, cli_db, capsys):
     payload = _json(capsys)
     assert payload['point_count'] == 100 and payload['returned_point_count'] == limit == len(payload['points'])
     assert payload['truncated'] is (limit < 100)
+
+
+def test_cli_offsets_totals_next_offsets_caps_and_validation(cli_db, capsys):
+    db, spot = cli_db; consensus = _consensus(db, spot)
+    for i in range(105):
+        run = create_spot_assessment_run(db, consensus_run_id=consensus.id, calculated_at=NOW + timedelta(seconds=i), spot_rules_version='v', spot_rules_hash=f'page{i}', spot_intelligence_engine_version='e', configuration_hash='ch')
+        mark_spot_assessment_run_status(db, run.id, 'failed')
+    point_run = create_spot_assessment_run(db, consensus_run_id=consensus.id, calculated_at=NOW + timedelta(days=1), spot_rules_version='v', spot_rules_hash='points', spot_intelligence_engine_version='e', configuration_hash='ch')
+    create_spot_assessment_points(db, [{'assessment_run_id': point_run.id, 'spot_id': spot.id, 'valid_at': NOW + timedelta(hours=i)} for i in range(105)])
+    mark_spot_assessment_run_status(db, point_run.id, 'completed'); db.commit()
+
+    assert cli.main(['status', '--limit', '999', '--offset', '100']) == 0
+    status = _json(capsys)
+    assert status['total_run_count'] == 106 and status['returned_run_count'] == 6
+    assert status['limit'] == 100 and status['next_offset'] is None and status['truncated'] is False
+
+    assert cli.main(['inspect-run', str(point_run.id), '--limit', '10', '--offset', '100']) == 0
+    inspected = _json(capsys)
+    assert inspected['total_point_count'] == 105 and inspected['returned_point_count'] == 5
+    assert inspected['next_offset'] is None and inspected['truncated'] is False
+    assert inspected['points'][0]['valid_at'] == (NOW + timedelta(hours=100)).replace(tzinfo=None).isoformat()
+
+    for command in (['status', '--offset', '-1'], ['inspect-run', str(point_run.id), '--offset', '-1']):
+        with pytest.raises(SystemExit) as exc:
+            cli.main(command)
+        assert exc.value.code == 2

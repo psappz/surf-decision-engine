@@ -186,6 +186,7 @@ class SpotAssessmentPoint(Base):
     __table_args__ = (
         UniqueConstraint('assessment_run_id', 'spot_id', 'valid_at', name='uq_assessment_point_run_spot_valid'),
         CheckConstraint('breaking_wave_min IS NULL OR breaking_wave_min >= 0', name='ck_assessment_breaking_min_nonnegative'),
+        CheckConstraint('breaking_wave_max IS NULL OR breaking_wave_max >= 0', name='ck_assessment_breaking_max_nonnegative'),
         CheckConstraint('breaking_wave_max IS NULL OR breaking_wave_min IS NULL OR breaking_wave_max >= breaking_wave_min', name='ck_assessment_breaking_max_gte_min'),
     )
     id: Mapped[int] = mapped_column(primary_key=True)

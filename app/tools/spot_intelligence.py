@@ -8,9 +8,9 @@ from typing import Sequence
 
 from ..database import SessionLocal
 from ..repositories.spot_assessment_repository import (
-    count_spot_assessment_points_for_run, get_spot_assessment_point,
-    get_spot_assessment_run, latest_spot_assessment_runs,
-    list_spot_assessment_points_for_run,
+    count_spot_assessment_points_for_run, count_spot_assessment_runs,
+    get_spot_assessment_point, get_spot_assessment_run,
+    latest_spot_assessment_runs, list_spot_assessment_points_for_run,
 )
 from ..services.consensus_safety import bounded_json, redact_text
 from ..services.spot_intelligence_engine import calculate_spot_assessment
@@ -26,6 +26,13 @@ def _positive_int(value: str) -> int:
     return parsed
 
 
+def _nonnegative_int(value: str) -> int:
+    parsed = int(value)
+    if parsed < 0:
+        raise argparse.ArgumentTypeError('must be a nonnegative integer')
+    return parsed
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog='python -m app.tools.spot_intelligence')
     sub = parser.add_subparsers(dest='command', required=True)
@@ -36,9 +43,11 @@ def build_parser() -> argparse.ArgumentParser:
     calculate.add_argument('--dry-run', action='store_true')
     status = sub.add_parser('status')
     status.add_argument('--limit', type=_positive_int, default=10)
+    status.add_argument('--offset', type=_nonnegative_int, default=0)
     inspect = sub.add_parser('inspect-run')
     inspect.add_argument('run_id', type=_positive_int)
     inspect.add_argument('--limit', type=_positive_int, default=50)
+    inspect.add_argument('--offset', type=_nonnegative_int, default=0)
     explain = sub.add_parser('explain-point')
     explain.add_argument('point_id', type=_positive_int)
     return parser
@@ -51,11 +60,19 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         if args.command == 'status':
             rows = []
-            for run in latest_spot_assessment_runs(db, limit=min(args.limit, 100)):
+            page_limit = min(args.limit, 100)
+            total = count_spot_assessment_runs(db)
+            for run in latest_spot_assessment_runs(db, limit=page_limit, offset=args.offset):
                 summary = _run_summary(run)
                 summary['point_count'] = count_spot_assessment_points_for_run(db, run.id)
                 rows.append(summary)
-            _print_json(rows)
+            has_more = args.offset + len(rows) < total
+            _print_json({
+                'total_run_count': total, 'returned_run_count': len(rows),
+                'offset': args.offset, 'limit': page_limit, 'truncated': has_more,
+                'next_offset': args.offset + len(rows) if has_more else None,
+                'runs': rows,
+            })
             return 0
         if args.command == 'inspect-run':
             run = get_spot_assessment_run(db, args.run_id)
@@ -63,8 +80,16 @@ def main(argv: Sequence[str] | None = None) -> int:
                 _print_json({'error': 'spot_assessment_run_not_found', 'run_id': args.run_id})
                 return 2
             total = count_spot_assessment_points_for_run(db, run.id)
-            points = list_spot_assessment_points_for_run(db, run.id, limit=min(args.limit, 100))
-            _print_json({'run': _run_summary(run), 'point_count': total, 'returned_point_count': len(points), 'truncated': total > len(points), 'points': [_point_summary(point) for point in points]})
+            page_limit = min(args.limit, 100)
+            points = list_spot_assessment_points_for_run(db, run.id, limit=page_limit, offset=args.offset)
+            has_more = args.offset + len(points) < total
+            _print_json({
+                'run': _run_summary(run), 'total_point_count': total,
+                'point_count': total, 'returned_point_count': len(points),
+                'offset': args.offset, 'limit': page_limit, 'truncated': has_more,
+                'next_offset': args.offset + len(points) if has_more else None,
+                'points': [_point_summary(point) for point in points],
+            })
             return 0
         if args.command == 'explain-point':
             point = get_spot_assessment_point(db, args.point_id)
