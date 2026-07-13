@@ -122,6 +122,10 @@ class _FakeDataset:
     def __getitem__(self, key):
         if key == 'time':
             return _FakeCoord([datetime(2026, 7, 12, 0, tzinfo=UTC), datetime(2026, 7, 12, 1, tzinfo=UTC)])
+        if key == 'latitude':
+            return _FakeCoord([37.416667])
+        if key == 'longitude':
+            return _FakeCoord([-8.833333])
         return _FakeValue({'VHM0': [1.23, 1.45], 'VTPK': [12.0, 13.0], 'VMDR': [315.0, 320.0]}[key])
 
     def sel(self, selector, method=None):
@@ -144,7 +148,14 @@ def test_parse_copernicus_netcdf_normalizes_fixture(monkeypatch, tmp_path):
     )
     assert len(points) == 2
     assert points[0].provider == 'copernicus-marine'
-    assert points[0].values == {'wave_height': 1.23, 'wave_period': 12.0, 'wave_direction': 315.0}
+    assert points[0].values['wave_height'] == 1.23
+    assert points[0].values['wave_period'] == 12.0
+    assert points[0].values['wave_direction'] == 315.0
+    assert points[0].values['requested_latitude'] == 37.44
+    assert points[0].values['requested_longitude'] == -8.8
+    assert points[0].values['selected_latitude'] == 37.416667
+    assert points[0].values['selected_longitude'] == -8.833333
+    assert points[0].values['selected_grid'] == '37.416667,-8.833333'
 
 
 def test_marine_scoring_values_prefer_copernicus_when_same_timestamp(client):

@@ -3,7 +3,7 @@
 Publication identities are deterministic and never use `fetched_at` as the sole identity.
 
 ## Copernicus Marine
-Inputs: provider, product ID, dataset ID, model cycle, latest valid forecast timestamp, and catalogue metadata fingerprint. Format: `copernicus:<product>:<dataset>:<cycle>:<latest-or-fingerprint>`.
+Inputs: provider, product ID, dataset ID, model cycle, latest valid forecast timestamp, and catalogue metadata fingerprint. Format: `copernicus:<product>:<dataset>:<cycle>:<latest-or-unknown>:<catalogue-fingerprint>`.
 
 ## Open-Meteo Marine
 Inputs: provider name, request geography, temporal range, issue/update metadata when exposed, otherwise bounded content hash. Weather and marine are separate providers and produce distinct identities.

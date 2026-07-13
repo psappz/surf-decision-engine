@@ -4,6 +4,7 @@ import gzip
 import hashlib
 import json
 import os
+import re
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -113,14 +114,27 @@ class ProviderLedgerWriteResult:
 
 def write_json_raw_payload(provider_name: str, publication_identity: str, payload: Any, root: str | Path | None = None) -> tuple[str, str, int]:
     """Persist small provider JSON payloads as bounded gzip files; credentials/headers must be excluded by caller."""
-    base = Path(root or os.getenv('PROVIDER_RAW_PAYLOAD_ROOT', 'data/provider-raw')) / provider_name
+    safe_provider = re.sub(r'[^A-Za-z0-9_.-]+', '-', provider_name).strip('.-') or 'provider'
+    base = Path(root or os.getenv('PROVIDER_RAW_PAYLOAD_ROOT', 'data/provider-raw')) / safe_provider
     base.mkdir(parents=True, exist_ok=True)
     digest = _hash_dict({'provider': provider_name, 'identity': publication_identity, 'payload': payload})
     path = base / f'{digest[:24]}.json.gz'
     body = json.dumps(payload, sort_keys=True, default=str).encode()
-    with gzip.open(path, 'wb') as fh:
+    body_checksum = hashlib.sha256(body).hexdigest()
+    tmp_path = path.with_suffix(path.suffix + '.tmp')
+    with gzip.open(tmp_path, 'wb') as fh:
         fh.write(body)
-    return str(path), hashlib.sha256(body).hexdigest(), path.stat().st_size
+    os.chmod(tmp_path, 0o600)
+    if path.exists():
+        with gzip.open(path, 'rb') as fh:
+            existing_checksum = hashlib.sha256(fh.read()).hexdigest()
+        if existing_checksum != body_checksum:
+            tmp_path.unlink(missing_ok=True)
+            raise RuntimeError(f'raw payload hash collision for {path}')
+        tmp_path.unlink(missing_ok=True)
+    else:
+        tmp_path.replace(path)
+    return str(path), body_checksum, path.stat().st_size
 
 
 def _get_or_create_publication(db: Session, desc: ProviderPublicationDescriptor) -> tuple[ProviderPublication, bool]:

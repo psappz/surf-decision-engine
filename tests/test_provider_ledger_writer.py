@@ -2,6 +2,8 @@ import os
 import tempfile
 from datetime import UTC, datetime, timedelta
 
+from pathlib import Path
+
 import pytest
 import sqlalchemy as sa
 from sqlalchemy.exc import IntegrityError
@@ -94,3 +96,22 @@ def test_identity_builders_are_deterministic_and_distinct():
     assert c1 == c2
     assert marine != weather
     assert ipma.startswith('ipma:')
+
+
+def test_copernicus_identity_includes_catalogue_metadata_fingerprint():
+    from app.services.provider_publication_identity import build_copernicus_publication_identity
+    base=build_copernicus_publication_identity('GLOBAL_ANALYSISFORECAST_WAV_001_027','cmems_mod_glo_wav_anfc_0.083deg_PT3H-i',_now(),_now(24),{'catalogue':'a'})
+    changed=build_copernicus_publication_identity('GLOBAL_ANALYSISFORECAST_WAV_001_027','cmems_mod_glo_wav_anfc_0.083deg_PT3H-i',_now(),_now(24),{'catalogue':'b'})
+    assert base != changed
+    assert len(base) < 500
+
+
+def test_raw_payload_path_sanitizes_provider_and_is_atomic(tmp_path):
+    from app.services.provider_ledger_writer import write_json_raw_payload
+    path, checksum, size = write_json_raw_payload('../provider with spaces', 'identity', {'safe': True}, root=tmp_path)
+    rel = Path(path).relative_to(tmp_path)
+    assert '..' not in rel.parts
+    assert 'provider-with-spaces' in path
+    assert checksum
+    assert size > 0
+    assert not Path(str(path) + '.tmp').exists()

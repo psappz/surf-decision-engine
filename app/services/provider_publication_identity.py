@@ -31,15 +31,16 @@ def bounded_content_hash(payload: Any, length: int = 20) -> str:
 
 def build_copernicus_publication_identity(product_id: str, dataset_id: str, model_cycle_at: datetime | None, latest_valid_at: datetime | None, metadata: dict[str, Any] | None = None) -> str:
     """Build a Copernicus identity from model-cycle/catalogue inputs; fetched_at is intentionally excluded."""
+    metadata_fingerprint = _digest(metadata or {}, 16) if metadata else 'no-metadata'
     payload = {
         'provider': COPERNICUS_PROVIDER,
         'product_id': product_id,
         'dataset_id': dataset_id,
         'model_cycle_at': _utc_iso(model_cycle_at),
         'latest_valid_at': _utc_iso(latest_valid_at),
-        'metadata_fingerprint': _digest(metadata or {}, 16) if metadata else None,
+        'metadata_fingerprint': metadata_fingerprint,
     }
-    return f"copernicus:{product_id}:{dataset_id}:{payload['model_cycle_at'] or 'unknown-cycle'}:{payload['latest_valid_at'] or payload['metadata_fingerprint'] or 'unknown'}"
+    return f"copernicus:{product_id}:{dataset_id}:{payload['model_cycle_at'] or 'unknown-cycle'}:{payload['latest_valid_at'] or 'unknown-latest'}:{metadata_fingerprint}"
 
 
 def build_open_meteo_publication_identity(provider_name: str, latitude: float | None, longitude: float | None, start: datetime, end: datetime, issue_time: datetime | None = None, response_metadata: dict[str, Any] | None = None, content: Any | None = None) -> str:

@@ -4,7 +4,7 @@
 Small JSON provider payloads are stored under `data/provider-raw/<provider>/` as gzip JSON. Copernicus NetCDF files remain in the existing Copernicus cache/raw location and are referenced by path.
 
 ## Naming and checksums
-JSON file names derive from a SHA-256 hash of provider, publication identity, and payload. Stored metadata includes checksum and content size.
+JSON provider directory names are sanitized. File names derive from a SHA-256 hash of provider, publication identity, and payload. Writes use a temporary gzip file and rename, with owner-only file permissions. Stored metadata includes checksum and content size.
 
 ## Security exclusions
 No credentials, request authorization headers, cookies, or unbounded debug data are written.
