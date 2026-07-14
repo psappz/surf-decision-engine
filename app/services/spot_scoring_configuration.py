@@ -22,7 +22,9 @@ def _version(name: str, value: object) -> str:
 def _number(name: str, value: object) -> float:
     if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(float(value)):
         raise ValueError(f'{name} must be a finite number')
-    return float(format(float(value), '.12g'))
+    normalized = float(format(float(value), '.12g'))
+    # JSON has two spellings for zero but they are not distinct scoring values.
+    return 0.0 if normalized == 0 else normalized
 
 
 def _optional_number(name: str, value: object) -> float | None:
@@ -32,6 +34,13 @@ def _optional_number(name: str, value: object) -> float | None:
 def _digest(payload: dict[str, Any]) -> str:
     body = json.dumps(payload, sort_keys=True, separators=(',', ':'), ensure_ascii=True)
     return hashlib.sha256(body.encode()).hexdigest()
+
+
+def canonical_payload_hash(payload: dict[str, Any]) -> str:
+    """Hash an already validated canonical payload."""
+    if not isinstance(payload, dict):
+        raise ValueError('canonical payload must be an object')
+    return _digest(payload)
 
 
 @dataclass(frozen=True)
@@ -55,12 +64,12 @@ class SpotScoringConfiguration:
             'component_maximum': _number('component_maximum', self.component_maximum),
             'maximum_penalty': _number('maximum_penalty', self.maximum_penalty),
         }
-        if values['score_minimum'] < 0 or values['score_maximum'] <= values['score_minimum']:
-            raise ValueError('score bounds must be non-negative and strictly ordered')
-        if values['component_minimum'] < 0 or values['component_maximum'] <= values['component_minimum']:
-            raise ValueError('component bounds must be non-negative and strictly ordered')
-        if values['maximum_penalty'] < 0:
-            raise ValueError('maximum_penalty must be non-negative')
+        if not 0 <= values['score_minimum'] < values['score_maximum'] <= 100:
+            raise ValueError('score bounds must be strictly ordered within 0..100')
+        if not 0 <= values['component_minimum'] < values['component_maximum'] <= 100:
+            raise ValueError('component bounds must be strictly ordered within 0..100')
+        if not 0 <= values['maximum_penalty'] <= 100:
+            raise ValueError('maximum_penalty must be within 0..100')
         return values
 
     def validate(self) -> None:

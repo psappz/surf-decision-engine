@@ -223,9 +223,13 @@ class SpotScoreRun(Base):
     calculated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     scoring_engine_version: Mapped[str] = mapped_column(String(80), nullable=False)
     scoring_configuration_hash: Mapped[str] = mapped_column(String(128), nullable=False)
+    scoring_configuration_json: Mapped[dict] = mapped_column(JSON, nullable=False)
+    surfer_profile_name: Mapped[str] = mapped_column(String(80), nullable=False)
     surfer_profile_version: Mapped[str] = mapped_column(String(80), nullable=False)
     surfer_profile_hash: Mapped[str] = mapped_column(String(128), nullable=False)
+    surfer_profile_json: Mapped[dict] = mapped_column(JSON, nullable=False)
     calculation_scope_hash: Mapped[str] = mapped_column(String(128), nullable=False, default='legacy-unscoped')
+    calculation_scope_json: Mapped[list] = mapped_column(JSON, nullable=False)
     recalculation_sequence: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     status: Mapped[str] = mapped_column(String(40), nullable=False)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -246,7 +250,7 @@ class SpotScoreSnapshot(Base):
         CheckConstraint('wind_speed_score IS NULL OR (wind_speed_score >= 0 AND wind_speed_score <= 100)', name='ck_score_snapshot_wind_speed_score_range'),
         CheckConstraint('tide_score IS NULL OR (tide_score >= 0 AND tide_score <= 100)', name='ck_score_snapshot_tide_score_range'),
         CheckConstraint('safety_score IS NULL OR (safety_score >= 0 AND safety_score <= 100)', name='ck_score_snapshot_safety_score_range'),
-        CheckConstraint('penalty_total IS NULL OR penalty_total >= 0', name='ck_score_snapshot_penalty_nonnegative'),
+        CheckConstraint('penalty_total IS NULL OR (penalty_total >= 0 AND penalty_total <= 100)', name='ck_score_snapshot_penalty_range'),
         Index('ix_spot_score_snapshots_run', 'score_run_id'),
         Index('ix_spot_score_snapshots_assessment_point', 'assessment_point_id'),
         Index('ix_spot_score_snapshots_spot_valid', 'spot_id', 'valid_at'),

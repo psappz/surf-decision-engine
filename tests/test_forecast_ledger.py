@@ -209,6 +209,10 @@ def test_multiple_runs_for_same_spot_and_valid_time_do_not_overwrite(db_session)
 
 
 def test_derived_snapshots_and_recommendations_are_append_only(db_session):
+    from app.services.spot_scoring_configuration import (
+        default_spot_scoring_configuration,
+        surfer_profile_snapshot,
+    )
     from app.forecast_ledger_repository import (
         create_confidence_run,
         create_confidence_snapshots,
@@ -236,7 +240,14 @@ def test_derived_snapshots_and_recommendations_are_append_only(db_session):
         ar = create_spot_assessment_run(db, consensus_run_id=c1.id, calculated_at=_now(), spot_rules_version='rules-v1', spot_rules_hash='hash1', spot_intelligence_engine_version='spot-v1', configuration_hash='spot-engine-cfg', status='running')
         assessment_point = create_spot_assessment_points(db, [{'assessment_run_id': ar.id, 'spot_id': spot_id, 'valid_at': valid, 'breaking_wave_min': 0.8, 'breaking_wave_max': 1.3}])[0]
         mark_spot_assessment_run_status(db, ar.id, 'completed')
-        sr = create_spot_score_run(db, assessment_run_id=ar.id, calculated_at=_now(), scoring_engine_version='score-v1', scoring_configuration_hash='score-cfg', surfer_profile_version='profile-v1', surfer_profile_hash='profile-hash', status='running')
+        sr = create_spot_score_run(
+            db,
+            assessment_run_id=ar.id,
+            calculated_at=_now(),
+            scoring_configuration=default_spot_scoring_configuration('score-v1'),
+            surfer_profile=surfer_profile_snapshot('beginner', profile_version='profile-v1'),
+            assessment_point_ids=[assessment_point.id],
+        )
         create_spot_score_snapshots(db, [{'score_run_id': sr.id, 'assessment_point_id': assessment_point.id, 'spot_id': spot_id, 'valid_at': valid, 'total_score': 82, 'condition_classification': 'go'}])
         mark_spot_score_run_status(db, sr.id, 'completed')
         cr = create_confidence_run(db, calculated_at=_now(), forecast_cutoff_at=_now(), confidence_engine_version='conf-v1', configuration_hash='conf-cfg', status='succeeded')

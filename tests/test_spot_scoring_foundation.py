@@ -1,11 +1,12 @@
 from datetime import UTC, datetime, timedelta
+import threading
+import time
 
 import pytest
 import sqlalchemy as sa
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import sessionmaker
 
-from app.forecast_ledger_models import SpotAssessmentPoint, SpotAssessmentRun
+from app.forecast_ledger_models import SpotAssessmentPoint, SpotAssessmentRun, SpotScoreRun
 from app.models import Base, SurfSpot
 from app.repositories.spot_score_repository import (
     SpotScoreRunTransitionError,
@@ -37,6 +38,13 @@ def db():
     engine = sa.create_engine('sqlite:///:memory:')
     Base.metadata.create_all(engine)
     session = sessionmaker(bind=engine, expire_on_commit=False)()
+    _seed_assessment(session)
+    yield session
+    session.close()
+    engine.dispose()
+
+
+def _seed_assessment(session):
     spot = SurfSpot(code='TST', slug='test', name='Test', beach_name=None, zone_name=None,
                     latitude=37, longitude=-9, description=None, spot_type=None,
                     difficulty=None, is_active_for_recommendations=True,
@@ -65,18 +73,16 @@ def db():
         for i in range(3)
     ])
     session.commit()
-    yield session
-    session.close()
-    engine.dispose()
 
 
 def _run(db, **overrides):
     assessment = db.query(SpotAssessmentRun).one()
+    points = db.query(SpotAssessmentPoint).order_by(SpotAssessmentPoint.id).all()
     values = dict(
         assessment_run_id=assessment.id, calculated_at=NOW,
-        scoring_engine_version='score-v1', scoring_configuration_hash='config-hash',
-        surfer_profile_version='profile-v1', surfer_profile_hash='profile-hash',
-        calculation_scope_hash='scope-hash', recalculation_sequence=0,
+        scoring_configuration=default_spot_scoring_configuration('score-v1'),
+        surfer_profile=surfer_profile_snapshot('beginner', profile_version='profile-v1'),
+        assessment_point_ids=[point.id for point in points], recalculation_sequence=0,
     )
     values.update(overrides)
     return create_spot_score_run(db, **values)
@@ -98,12 +104,13 @@ def _equivalent(run):
 
 
 def test_repository_enforces_running_batches_and_single_terminal_transition(db):
-    with pytest.raises(SpotScoreRunTransitionError):
-        _run(db, status='completed')
     run = _run(db)
     points = db.query(SpotAssessmentPoint).order_by(SpotAssessmentPoint.id).all()
     rows = create_spot_score_snapshots(db, [_snapshot(points[0], run.id), _snapshot(points[1], run.id)])
     assert len(rows) == 2
+    with pytest.raises(SpotScoreRunTransitionError, match='exactly cover'):
+        mark_spot_score_run_status(db, run.id, 'completed')
+    create_spot_score_snapshots(db, [_snapshot(points[2], run.id)])
     completed = mark_spot_score_run_status(db, run.id, 'completed')
     assert completed.status == 'completed'
     with pytest.raises(SpotScoreRunTransitionError):
@@ -137,8 +144,8 @@ def test_repository_guards_point_provenance_and_redacts_errors(db):
 
 def test_repository_equivalence_sequences_and_bounded_reads(db):
     first = _run(db)
-    point = db.query(SpotAssessmentPoint).first()
-    snapshot = create_spot_score_snapshots(db, [_snapshot(point, first.id)])[0]
+    points = db.query(SpotAssessmentPoint).order_by(SpotAssessmentPoint.id).all()
+    snapshot = create_spot_score_snapshots(db, [_snapshot(point, first.id) for point in points])[0]
     mark_spot_score_run_status(db, first.id, 'completed')
     second = _run(db, recalculation_sequence=1, calculated_at=NOW + timedelta(minutes=1))
     assert find_equivalent_completed_score(db, **_equivalent(first)).id == first.id
@@ -147,7 +154,7 @@ def test_repository_equivalence_sequences_and_bounded_reads(db):
     assert get_spot_score_run(db, first.id).id == first.id
     assert get_spot_score_snapshot(db, snapshot.id).id == snapshot.id
     assert count_spot_score_runs(db) == 2
-    assert count_spot_score_snapshots_for_run(db, first.id) == 1
+    assert count_spot_score_snapshots_for_run(db, first.id) == 3
     assert list_spot_score_snapshots_for_run(db, first.id, limit=1) == [snapshot]
     assert latest_spot_score_runs(db, limit=1) == [second]
     for bad in (0, 501, True):
@@ -162,9 +169,92 @@ def test_repository_and_database_checks_sequence_component_scores_and_restrictiv
         _run(db, recalculation_sequence=-1)
     run = _run(db)
     point = db.query(SpotAssessmentPoint).first()
-    with pytest.raises(IntegrityError):
+    with pytest.raises(SpotScoreRunTransitionError):
         create_spot_score_snapshots(db, [_snapshot(point, run.id, wind_speed_score=101)])
-    db.rollback()
+
+
+def test_run_persists_canonical_payloads_derived_hashes_and_exact_scope(db):
+    points = db.query(SpotAssessmentPoint).order_by(SpotAssessmentPoint.id).all()
+    run = _run(db, assessment_point_ids=[points[2].id, points[0].id])
+    assert run.calculation_scope_json == [points[0].id, points[2].id]
+    assert run.scoring_configuration_hash == default_spot_scoring_configuration(
+        'score-v1'
+    ).configuration_hash()
+    assert run.surfer_profile_name == 'beginner'
+    assert run.surfer_profile_json == surfer_profile_snapshot(
+        'beginner', profile_version='profile-v1'
+    ).canonical_payload()
+    assert run.surfer_profile_hash == surfer_profile_snapshot(
+        'beginner', profile_version='profile-v1'
+    ).profile_hash
+    with pytest.raises(SpotScoreRunTransitionError, match='outside'):
+        create_spot_score_snapshots(db, [_snapshot(points[1], run.id)])
+    create_spot_score_snapshots(
+        db, [_snapshot(points[0], run.id), _snapshot(points[2], run.id)]
+    )
+    assert mark_spot_score_run_status(db, run.id, 'completed').status == 'completed'
+
+
+def test_repository_rejects_empty_scope_naive_calculation_time_and_unsafe_inputs(db):
+    with pytest.raises(SpotScoreRunTransitionError, match='must not be empty'):
+        _run(db, assessment_point_ids=[])
+    with pytest.raises(SpotScoreRunTransitionError, match='timezone-aware'):
+        _run(db, calculated_at=NOW.replace(tzinfo=None))
+    run = _run(db)
+    point = db.query(SpotAssessmentPoint).first()
+    with pytest.raises(SpotScoreRunTransitionError, match='unsupported snapshot fields'):
+        create_spot_score_snapshots(db, [_snapshot(point, run.id, surprise='x')])
+    with pytest.raises(SpotScoreRunTransitionError, match='safe text'):
+        create_spot_score_snapshots(
+            db, [_snapshot(point, run.id, condition_classification='bad\nvalue')]
+        )
+
+
+def test_two_session_snapshot_insert_and_completion_are_serialized(tmp_path):
+    engine = sa.create_engine(
+        f"sqlite:///{tmp_path / 'concurrency.db'}",
+        connect_args={'timeout': 5, 'check_same_thread': False},
+    )
+    Base.metadata.create_all(engine)
+    Session = sessionmaker(bind=engine, expire_on_commit=False)
+    setup = Session()
+    _seed_assessment(setup)
+    run = _run(setup)
+    run_id = run.id
+    setup.commit()
+    setup.close()
+
+    writer = Session()
+    points = writer.query(SpotAssessmentPoint).order_by(SpotAssessmentPoint.id).all()
+    create_spot_score_snapshots(writer, [_snapshot(point, run_id) for point in points])
+
+    started = threading.Event()
+    outcome = []
+
+    def complete_in_other_session():
+        terminal = Session()
+        started.set()
+        try:
+            outcome.append(mark_spot_score_run_status(terminal, run_id, 'completed').status)
+            terminal.commit()
+        finally:
+            terminal.close()
+
+    thread = threading.Thread(target=complete_in_other_session)
+    thread.start()
+    assert started.wait(2)
+    time.sleep(0.1)
+    assert thread.is_alive(), 'terminal session should wait for the snapshot transaction'
+    writer.commit()
+    thread.join(5)
+    assert not thread.is_alive()
+    assert outcome == ['completed']
+    verify = Session()
+    assert verify.get(SpotScoreRun, run_id).status == 'completed'
+    assert count_spot_score_snapshots_for_run(verify, run_id) == 3
+    verify.close()
+    writer.close()
+    engine.dispose()
 
 
 def test_scoring_configuration_is_canonical_validated_and_behavior_only():
@@ -181,6 +271,13 @@ def test_scoring_configuration_is_canonical_validated_and_behavior_only():
         SpotScoringConfiguration(engine_version='bad version').validate()
     with pytest.raises(ValueError):
         default_spot_scoring_configuration('')
+    assert SpotScoringConfiguration(score_minimum=-0.0).canonical_payload()['score_minimum'] == 0.0
+    assert SpotScoringConfiguration(score_minimum=-0.0).configuration_hash() == (
+        SpotScoringConfiguration(score_minimum=0.0).configuration_hash()
+    )
+    for field in ('score_maximum', 'component_maximum', 'maximum_penalty'):
+        with pytest.raises(ValueError):
+            SpotScoringConfiguration(**{field: 101}).validate()
 
 
 def test_compatibility_facade_exports_mature_score_repository():
