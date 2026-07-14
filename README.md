@@ -1,6 +1,6 @@
 # Surf Decision Engine local prototype
 
-Surf Decision Engine is a private FastAPI/Jinja2 surf recommendation prototype for advanced surfers around Aljezur, Portugal. The future public host is `loli.restricted.invalid`, but this task intentionally performs **no VPS deployment**.
+Surf Decision Engine is a private FastAPI/Jinja2 surf recommendation prototype for advanced surfers around Aljezur, Portugal. The future public host is tbd, but this task intentionally performs **no VPS deployment**.
 
 ## Architecture
 - FastAPI backend with server-rendered Jinja2 HTML and minimal CSS.
