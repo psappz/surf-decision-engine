@@ -220,8 +220,22 @@ async def _ensure_copernicus_forecasts(db, spots, start, end):
     return pf
 
 
+def _seed_forecast_bounds(now: datetime) -> tuple[datetime, datetime]:
+    now=(now if now.tzinfo else now.replace(tzinfo=UTC)).replace(minute=0,second=0,microsecond=0)
+    local_date=now.astimezone(__import__('zoneinfo').ZoneInfo('Europe/Lisbon')).date()
+    day_windows=local_day_windows(local_date)
+    # Keep the fixture usable after the final daypart has ended: startup and CI
+    # still need current-local-day recommendations, not only future points.
+    return (
+        min(now-timedelta(hours=2), min(window[0] for window in day_windows.values())),
+        max(now+timedelta(hours=36), max(window[1] for window in day_windows.values())),
+    )
+
+
 async def ensure_seed_forecasts(db):
-    spots=db.query(SurfSpot).all(); now=datetime.now(UTC).replace(minute=0,second=0,microsecond=0); start=now-timedelta(hours=2); end=now+timedelta(hours=36)
+    now=datetime.now(UTC).replace(minute=0,second=0,microsecond=0)
+    start,end=_seed_forecast_bounds(now)
+    spots=db.query(SurfSpot).all()
     can_fetch, _ = provider_can_fetch(db, 'mock-open-meteo-fixture', datetime.now(UTC))
     if not can_fetch:
         if not db.query(DailyRecommendation).first():

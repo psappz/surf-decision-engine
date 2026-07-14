@@ -45,6 +45,8 @@ A consensus run must declare which provider forecast versions were eligible by c
 
 The rules hash protects reproducibility when spot metadata or rule text changes under the same human-readable version. `configuration_hash` is separate and covers global Spot Intelligence transformation settings so the rules hash does not carry two meanings.
 
+PR #4 persists the canonical rule snapshot and calculation scope in bounded run metadata and preserves each upstream Consensus point ID in point provenance. Equivalent successful inputs reuse a completed run at the service boundary; forced reruns remain distinct immutable audit records.
+
 ## Recommendation scoring versioning
 
 `spot_score_runs` stores:
