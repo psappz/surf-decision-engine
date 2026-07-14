@@ -19,6 +19,27 @@ _SCORE_COLUMNS = (
 
 
 def upgrade():
+    bind = op.get_bind()
+    # Validate legacy provenance before any batch operation. SQLite implements
+    # batch DDL with temporary tables and does not provide transactional DDL;
+    # raising after a rebuild can therefore leave retry-blocking artifacts.
+    missing = bind.execute(sa.text("""
+        SELECT COUNT(*)
+          FROM spot_score_snapshots AS ss
+          JOIN spot_score_runs AS sr
+            ON sr.id = ss.score_run_id
+          LEFT JOIN spot_assessment_points AS ap
+            ON ap.assessment_run_id = sr.assessment_run_id
+           AND ap.spot_id = ss.spot_id
+           AND ap.valid_at = ss.valid_at
+         WHERE ap.id IS NULL
+    """)).scalar_one()
+    if missing:
+        raise RuntimeError(
+            f'0008 cannot infer assessment_point_id for {missing} legacy score snapshot(s); '
+            'repair or remove those unverifiable rows before upgrading'
+        )
+
     # Existing 0005 rows form attempt zero in an explicitly legacy scope. The
     # defaults are retained for old writers during a rolling application update.
     with op.batch_alter_table('spot_score_runs') as batch:
@@ -56,7 +77,6 @@ def upgrade():
     # identities, and refuse to manufacture provenance when no match exists.
     with op.batch_alter_table('spot_score_snapshots') as batch:
         batch.add_column(sa.Column('assessment_point_id', sa.Integer(), nullable=True))
-    bind = op.get_bind()
     bind.execute(sa.text("""
         UPDATE spot_score_snapshots
            SET assessment_point_id = (
